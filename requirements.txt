@@ -1,0 +1,5 @@
+dune-client
+pandas
+matplotlib
+requests
+python-dotenv

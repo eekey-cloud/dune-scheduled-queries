@@ -1,0 +1,39 @@
+name: Quote Exec Scatter Plot Report
+
+on:
+  schedule:
+    # Run at 7:15 PM UTC daily
+    - cron: '15 19 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scatter plot script
+        env:
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python quote_exec_scatter.py
+
+      - name: Upload plot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quote-exec-scatter-plot
+          path: quote_exec_scatter.png
+          retention-days: 7
