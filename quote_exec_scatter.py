@@ -182,20 +182,34 @@ def send_to_slack(fig, df):
     else:
         print("Failed to upload image, sending text-only summary")
 
-    # Calculate summary stats
-    summary_stats = df.groupby('venue')['wide_bps'].agg(['mean', 'min', 'max', 'count']).round(2)
+    # Calculate summary stats with quantiles
+    summary_stats = df.groupby('venue')['wide_bps'].agg([
+        'mean', 'min', 'max', 'count',
+        ('q25', lambda x: x.quantile(0.25)),
+        ('q50', lambda x: x.quantile(0.50)),
+        ('q75', lambda x: x.quantile(0.75)),
+        ('q95', lambda x: x.quantile(0.95))
+    ]).round(2)
+
+    # Calculate overall quantiles
+    overall_q25 = df['wide_bps'].quantile(0.25)
+    overall_q50 = df['wide_bps'].quantile(0.50)
+    overall_q75 = df['wide_bps'].quantile(0.75)
+    overall_q95 = df['wide_bps'].quantile(0.95)
 
     # Create summary text
     summary_text = f"*Quote vs Exec Spread Report*\n"
     summary_text += f"_Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}_\n\n"
     summary_text += f"*Total Transactions:* {len(df)}\n"
-    summary_text += f"*Wide BPS Range:* {df['wide_bps'].min():.2f} to {df['wide_bps'].max():.2f}\n\n"
+    summary_text += f"*Wide BPS Range:* {df['wide_bps'].min():.2f} to {df['wide_bps'].max():.2f}\n"
+    summary_text += f"*Quantiles:* Q25={overall_q25:.2f}, Q50={overall_q50:.2f}, Q75={overall_q75:.2f}, Q95={overall_q95:.2f}\n\n"
 
     # Add per-venue summary
     summary_text += "*Summary by Venue:*\n"
     for venue, stats in summary_stats.iterrows():
         short_venue = venue[:12] + "..." if len(venue) > 15 else venue
         summary_text += f"• `{short_venue}`: mean={stats['mean']:.2f}, min={stats['min']:.2f}, max={stats['max']:.2f}, count={int(stats['count'])}\n"
+        summary_text += f"   Q25={stats['q25']:.2f}, Q50={stats['q50']:.2f}, Q75={stats['q75']:.2f}, Q95={stats['q95']:.2f}\n"
 
     # Build Slack blocks
     blocks = [
