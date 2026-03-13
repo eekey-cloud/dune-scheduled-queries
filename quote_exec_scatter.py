@@ -57,21 +57,37 @@ def create_scatter_plot(df):
     # Create figure with appropriate size
     fig, ax = plt.subplots(figsize=(14, 8))
 
-    # Plot each venue separately for legend
+    # Track which venues have already been labeled (to avoid duplicate legend entries)
+    labeled_venues = set()
+
+    # Plot each venue+tx_success combo separately for correct markers
     for venue in venues:
         venue_data = df[df['venue'] == venue]
-        # Shorten venue name for legend
         short_name = venue[:8] + "..." if len(venue) > 12 else venue
-        ax.scatter(
-            venue_data['block_time'],
-            venue_data['wide_bps'],
-            c=[venue_colors[venue]],
-            label=f"{short_name} ({len(venue_data)})",
-            alpha=0.7,
-            s=50,
-            edgecolors='white',
-            linewidth=0.5
-        )
+
+        for tx_success, marker in [(True, 'o'), (False, 'x')]:
+            subset = venue_data[venue_data['tx_success'] == tx_success]
+            if subset.empty:
+                continue
+
+            # Only add legend label once per venue
+            if venue not in labeled_venues:
+                label = f"{short_name} ({len(venue_data)})"
+                labeled_venues.add(venue)
+            else:
+                label = None
+
+            ax.scatter(
+                subset['block_time'],
+                subset['wide_bps'],
+                c=[venue_colors[venue]],
+                marker=marker,
+                label=label,
+                alpha=0.7,
+                s=50,
+                edgecolors='white' if marker == 'o' else venue_colors[venue],
+                linewidth=0.5 if marker == 'o' else 1.5
+            )
 
     # Configure y-axis with 0.1 bps increments for clear visualization
     y_min = df['wide_bps'].min()
@@ -101,7 +117,7 @@ def create_scatter_plot(df):
     ax.set_title(f'Quote vs Exec Spread by Venue\n(Last 24 hours - {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})', fontsize=14)
 
     # Legend
-    ax.legend(title='Venue (count)', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
+    ax.legend(title='Venue (count)  [o=success, x=fail]', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
 
     # Rotate x-axis labels for better readability
     plt.xticks(rotation=45, ha='right')
