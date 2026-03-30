@@ -78,11 +78,11 @@ def build_slack_message(data):
         # Use code block for alignment, then colored change outside
         row_base = f"`{idx:>2}  {name_display} {vol1} {vol2}`"
 
-        # Add colored triangle indicator (green up / red down)
+        # Add colored indicator (green up / red down)
         if pct_change >= 0:
-            change_str = f"  ▲ `+{abs(pct_change):.1f}%`"
+            change_str = f"  📈 `+{abs(pct_change):.1f}%`"
         else:
-            change_str = f"  ▼ `-{abs(pct_change):.1f}%`"
+            change_str = f"  📉 `-{abs(pct_change):.1f}%`"
 
         table_lines.append(row_base + change_str)
 
