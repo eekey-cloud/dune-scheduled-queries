@@ -89,9 +89,9 @@ def build_slack_message(data):
 
         # Add colored change indicator
         if pct_change >= 0:
-            change_str = f"  :large_green_circle: {change_val}"
+            change_str = f"  :small_green_dot: {change_val}"
         else:
-            change_str = f"  :red_circle: {change_val}"
+            change_str = f"  :small_red_triangle_down: {change_val}"
 
         table_lines.append(row_base + change_str)
 
