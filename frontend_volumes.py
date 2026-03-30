@@ -67,8 +67,8 @@ def build_slack_message(data):
 
     # Build the table rows
     table_lines = []
-    table_lines.append(f"*Frontend*              *{yesterday_str}*      *{day_before_str}*      *Change*")
-    table_lines.append("─" * 50)
+    table_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
+    table_lines.append("`" + "─" * 52 + "`")
 
     for idx, row in enumerate(data[:10], 1):
         client_name = row.get('client_name', 'Unknown')
@@ -76,15 +76,24 @@ def build_slack_message(data):
         day_before_vol = row.get('day_before_volume', 0)
         pct_change = row.get('pct_change', 0)
 
-        # Pad client name for alignment
-        name_display = client_name[:12].ljust(12)
+        # Format values with fixed widths
+        name_display = client_name[:14].ljust(14)
         vol1 = format_volume(yesterday_vol).rjust(10)
         vol2 = format_volume(day_before_vol).rjust(10)
 
         arrow = get_change_indicator(pct_change)
-        change_str = f"{arrow} {abs(pct_change):.1f}%"
+        change_val = f"{arrow} {abs(pct_change):.1f}%"
 
-        table_lines.append(f"`{idx:2}.` {name_display}  {vol1}   {vol2}   {change_str}")
+        # Use code block for alignment, then colored change outside
+        row_base = f"`{idx:>2}  {name_display} {vol1} {vol2}`"
+
+        # Add colored change indicator
+        if pct_change >= 0:
+            change_str = f"  :large_green_circle: {change_val}"
+        else:
+            change_str = f"  :red_circle: {change_val}"
+
+        table_lines.append(row_base + change_str)
 
     table_text = "\n".join(table_lines)
 
