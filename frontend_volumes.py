@@ -46,12 +46,6 @@ def format_volume(value):
         return f"${value:.2f}"
 
 
-def get_change_indicator(pct_change):
-    """Get simple arrow indicator based on percent change."""
-    if pct_change >= 0:
-        return "▲"
-    else:
-        return "▼"
 
 
 def build_slack_message(data):
@@ -81,17 +75,14 @@ def build_slack_message(data):
         vol1 = format_volume(yesterday_vol).rjust(10)
         vol2 = format_volume(day_before_vol).rjust(10)
 
-        arrow = get_change_indicator(pct_change)
-        change_val = f"{arrow} {abs(pct_change):.1f}%"
-
         # Use code block for alignment, then colored change outside
         row_base = f"`{idx:>2}  {name_display} {vol1} {vol2}`"
 
-        # Add colored change indicator
+        # Add colored arrow indicator
         if pct_change >= 0:
-            change_str = f"  :small_green_dot: {change_val}"
+            change_str = f"  :arrow_up_small: `+{abs(pct_change):.1f}%`"
         else:
-            change_str = f"  :small_red_triangle_down: {change_val}"
+            change_str = f"  :small_red_triangle_down: `-{abs(pct_change):.1f}%`"
 
         table_lines.append(row_base + change_str)
 
