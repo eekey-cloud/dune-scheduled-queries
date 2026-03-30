@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Fetch top 10 frontend daily volumes from Dune and send a beautiful report to Slack.
-Shows client name, yesterday's volume, day before volume, and percent change.
+Shows client name, volumes with actual dates, and percent change.
 """
 
 import os
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dune_client.client import DuneClient
 from dotenv import load_dotenv
 
@@ -46,45 +46,64 @@ def format_volume(value):
         return f"${value:.2f}"
 
 
-def get_change_emoji(pct_change):
-    """Get emoji based on percent change."""
-    if pct_change >= 20:
-        return "🚀"
-    elif pct_change >= 10:
-        return "📈"
-    elif pct_change >= 0:
-        return "✅"
-    elif pct_change >= -10:
-        return "📉"
-    elif pct_change >= -20:
-        return "⚠️"
+def get_change_indicator(pct_change):
+    """Get simple arrow indicator based on percent change."""
+    if pct_change >= 0:
+        return "▲"
     else:
-        return "🔻"
-
-
-def get_rank_emoji(rank):
-    """Get medal emoji for top 3."""
-    if rank == 1:
-        return "🥇"
-    elif rank == 2:
-        return "🥈"
-    elif rank == 3:
-        return "🥉"
-    else:
-        return f"{rank}."
+        return "▼"
 
 
 def build_slack_message(data):
-    """Build a beautiful Slack Block Kit message."""
+    """Build a clean, simple Slack Block Kit message."""
 
-    # Header
+    # Calculate dates
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+    day_before = today - timedelta(days=2)
+
+    yesterday_str = yesterday.strftime("%b %d")  # e.g., "Mar 30"
+    day_before_str = day_before.strftime("%b %d")  # e.g., "Mar 29"
+
+    # Build the table rows
+    table_lines = []
+    table_lines.append(f"*Frontend*              *{yesterday_str}*      *{day_before_str}*      *Change*")
+    table_lines.append("─" * 50)
+
+    for idx, row in enumerate(data[:10], 1):
+        client_name = row.get('client_name', 'Unknown')
+        yesterday_vol = row.get('yesterday_volume', 0)
+        day_before_vol = row.get('day_before_volume', 0)
+        pct_change = row.get('pct_change', 0)
+
+        # Pad client name for alignment
+        name_display = client_name[:12].ljust(12)
+        vol1 = format_volume(yesterday_vol).rjust(10)
+        vol2 = format_volume(day_before_vol).rjust(10)
+
+        arrow = get_change_indicator(pct_change)
+        change_str = f"{arrow} {abs(pct_change):.1f}%"
+
+        table_lines.append(f"`{idx:2}.` {name_display}  {vol1}   {vol2}   {change_str}")
+
+    table_text = "\n".join(table_lines)
+
     blocks = [
         {
-            "type": "header",
+            "type": "section",
             "text": {
-                "type": "plain_text",
-                "text": "📊 Top 10 Frontend Daily Volumes",
-                "emoji": True
+                "type": "mrkdwn",
+                "text": f"*Top 10 Frontend Volumes*\n_{yesterday.strftime('%A, %B %d, %Y')}_"
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": table_text
             }
         },
         {
@@ -92,84 +111,11 @@ def build_slack_message(data):
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": f"🕐 Report generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                    "text": "via Dune Analytics"
                 }
             ]
-        },
-        {
-            "type": "divider"
         }
     ]
-
-    # Calculate totals for summary
-    total_yesterday = sum(row.get('yesterday_volume', 0) for row in data)
-    total_day_before = sum(row.get('day_before_volume', 0) for row in data)
-    total_pct_change = ((total_yesterday - total_day_before) / total_day_before * 100) if total_day_before > 0 else 0
-
-    # Summary section
-    blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": (
-                f"*📈 Market Summary*\n"
-                f"Total Volume (Top 10): *{format_volume(total_yesterday)}*\n"
-                f"vs Previous Day: *{format_volume(total_day_before)}* ({total_pct_change:+.2f}%)"
-            )
-        }
-    })
-
-    blocks.append({"type": "divider"})
-
-    # Column headers
-    blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": "*Rank  │  Frontend  │  Yesterday  │  Day Before  │  Change*"
-        }
-    })
-
-    # Build rows for each client
-    for idx, row in enumerate(data[:10], 1):
-        client_name = row.get('client_name', 'Unknown')
-        yesterday_vol = row.get('yesterday_volume', 0)
-        day_before_vol = row.get('day_before_volume', 0)
-        pct_change = row.get('pct_change', 0)
-
-        rank_emoji = get_rank_emoji(idx)
-        change_emoji = get_change_emoji(pct_change)
-
-        # Format the change with color indicator
-        if pct_change >= 0:
-            change_str = f"+{pct_change:.2f}%"
-        else:
-            change_str = f"{pct_change:.2f}%"
-
-        row_text = (
-            f"{rank_emoji}  *{client_name}*\n"
-            f"      └─ {format_volume(yesterday_vol)}  ←  {format_volume(day_before_vol)}  │  {change_emoji} {change_str}"
-        )
-
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": row_text
-            }
-        })
-
-    # Footer
-    blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [
-            {
-                "type": "mrkdwn",
-                "text": "📡 Data source: Dune Analytics  •  🔄 Updates daily at 4:00 AM UTC"
-            }
-        ]
-    })
 
     return blocks
 
