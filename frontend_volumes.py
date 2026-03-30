@@ -80,9 +80,9 @@ def build_slack_message(data):
 
         # Add colored triangle indicator (green up / red down)
         if pct_change >= 0:
-            change_str = f"  🔺 `+{abs(pct_change):.1f}%`"
+            change_str = f"  :small_green_triangle: `+{abs(pct_change):.1f}%`"
         else:
-            change_str = f"  🔻 `-{abs(pct_change):.1f}%`"
+            change_str = f"  :small_red_triangle_down: `-{abs(pct_change):.1f}%`"
 
         table_lines.append(row_base + change_str)
 
