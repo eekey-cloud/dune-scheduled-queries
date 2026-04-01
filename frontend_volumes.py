@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Fetch top 10 frontend daily volumes from Dune and send a beautiful report to Slack.
-Shows client name, volumes with actual dates, and percent change.
+Fetch top 10 frontend daily volumes & transactions from Dune and send a beautiful report to Slack.
+Shows client name, volumes, transactions with actual dates, and percent change.
 """
 
 import os
@@ -46,66 +46,115 @@ def format_volume(value):
         return f"${value:.2f}"
 
 
+def format_txns(value):
+    """Format transaction count as X.XXk or raw number."""
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.2f}m"
+    elif value >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    else:
+        return f"{int(value)}"
+
+
+def format_change(pct_change):
+    """Return emoji + formatted percent change string."""
+    if pct_change >= 0:
+        return f"  📈 `+{abs(pct_change):.1f}%`"
+    else:
+        return f"  📉 `-{abs(pct_change):.1f}%`"
 
 
 def build_slack_message(data):
-    """Build a clean, simple Slack Block Kit message."""
+    """Build a clean, simple Slack Block Kit message with volume and txn sections."""
 
     # Calculate dates
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     day_before = today - timedelta(days=2)
 
-    yesterday_str = yesterday.strftime("%b %d")  # e.g., "Mar 30"
-    day_before_str = day_before.strftime("%b %d")  # e.g., "Mar 29"
+    yesterday_str = yesterday.strftime("%b %d")
+    day_before_str = day_before.strftime("%b %d")
 
-    # Build the table rows
-    table_lines = []
-    table_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
-    table_lines.append("`" + "─" * 52 + "`")
+    # ── Volume table ──
+    vol_lines = []
+    vol_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
+    vol_lines.append("`" + "─" * 52 + "`")
 
     for idx, row in enumerate(data[:10], 1):
         client_name = row.get('client_name', 'Unknown')
         yesterday_vol = row.get('yesterday_volume', 0)
         day_before_vol = row.get('day_before_volume', 0)
-        pct_change = row.get('pct_change', 0)
+        vol_pct = row.get('volume_pct_change', row.get('pct_change', 0))
 
-        # Format values with fixed widths
         name_display = client_name[:14].ljust(14)
         vol1 = format_volume(yesterday_vol).rjust(10)
         vol2 = format_volume(day_before_vol).rjust(10)
-
-        # Use code block for alignment, then colored change outside
         row_base = f"`{idx:>2}  {name_display} {vol1} {vol2}`"
 
-        # Add colored indicator (green up / red down)
-        if pct_change >= 0:
-            change_str = f"  📈 `+{abs(pct_change):.1f}%`"
-        else:
-            change_str = f"  📉 `-{abs(pct_change):.1f}%`"
+        vol_lines.append(row_base + format_change(vol_pct))
 
-        table_lines.append(row_base + change_str)
+    vol_text = "\n".join(vol_lines)
 
-    table_text = "\n".join(table_lines)
+    # ── Transactions table ──
+    txn_lines = []
+    txn_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
+    txn_lines.append("`" + "─" * 52 + "`")
 
+    for idx, row in enumerate(data[:10], 1):
+        client_name = row.get('client_name', 'Unknown')
+        yesterday_txns = row.get('yesterday_txns', 0)
+        day_before_txns = row.get('day_before_txns', 0)
+        txn_pct = row.get('txns_pct_change', 0)
+
+        name_display = client_name[:14].ljust(14)
+        txn1 = format_txns(yesterday_txns).rjust(10)
+        txn2 = format_txns(day_before_txns).rjust(10)
+        row_base = f"`{idx:>2}  {name_display} {txn1} {txn2}`"
+
+        txn_lines.append(row_base + format_change(txn_pct))
+
+    txn_text = "\n".join(txn_lines)
+
+    # ── Assemble blocks ──
     blocks = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Top 10 Frontend Volumes*\n_{yesterday.strftime('%A, %B %d, %Y')}_"
+                "text": f"*Top 10 Frontend Volumes & Transactions*\n_{yesterday.strftime('%A, %B %d, %Y')}_"
             }
         },
+        {"type": "divider"},
         {
-            "type": "divider"
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "💰 *Volume*"
+            }
         },
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": table_text
+                "text": vol_text
             }
         },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "🔁 *Transactions*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": txn_text
+            }
+        },
+        {"type": "divider"},
         {
             "type": "context",
             "elements": [
@@ -125,7 +174,7 @@ def send_to_slack(data):
     blocks = build_slack_message(data)
 
     payload = {
-        "text": "Top 10 Frontend Daily Volumes Report",
+        "text": "Top 10 Frontend Daily Volumes & Transactions Report",
         "blocks": blocks
     }
 
@@ -153,7 +202,9 @@ def main():
     # Print data preview
     print(f"\nTop 10 Frontends by Volume:")
     for idx, row in enumerate(data[:10], 1):
-        print(f"  {idx}. {row.get('client_name', 'Unknown')}: {format_volume(row.get('yesterday_volume', 0))}")
+        vol = format_volume(row.get('yesterday_volume', 0))
+        txns = format_txns(row.get('yesterday_txns', 0))
+        print(f"  {idx}. {row.get('client_name', 'Unknown')}: {vol} | {txns} txns")
 
     # Send to Slack
     send_to_slack(data)
