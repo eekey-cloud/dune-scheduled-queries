@@ -38,6 +38,7 @@ def fetch_dune_data():
 
 def format_volume(value):
     """Format volume as $X.XXm or $X.XXk."""
+    value = float(value)
     if value >= 1_000_000:
         return f"${value / 1_000_000:.2f}m"
     elif value >= 1_000:
@@ -48,6 +49,7 @@ def format_volume(value):
 
 def format_txns(value):
     """Format transaction count as X.XXk or raw number."""
+    value = float(value)
     if value >= 1_000_000:
         return f"{value / 1_000_000:.2f}m"
     elif value >= 1_000:
@@ -58,6 +60,7 @@ def format_txns(value):
 
 def format_change(pct_change):
     """Return emoji + formatted percent change string."""
+    pct_change = float(pct_change)
     if pct_change >= 0:
         return f"  📈 `+{abs(pct_change):.1f}%`"
     else:
