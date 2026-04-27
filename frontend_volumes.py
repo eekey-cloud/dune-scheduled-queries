@@ -160,10 +160,7 @@ def build_slack_message(data, share_lookup):
     share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>8} {'OKX':>8} {'Jupiter':>8}   DFlow Δ`")
     share_lines.append("`" + "─" * 56 + "`")
 
-    for idx, row in enumerate(data[:10], 1):
-        client_name = row.get('client_name', 'Unknown')
-        share_info = share_lookup.get(client_name, {})
-
+    for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
         dflow_pct = share_info.get('dflow_volume_pct', 0)
         okx_pct = share_info.get('okx_volume_pct', 0)
         jupiter_pct = share_info.get('jupiter_volume_pct', 0)
@@ -287,9 +284,14 @@ def main():
         vol = format_volume(row.get('yesterday_volume', 0))
         txns = format_txns(row.get('yesterday_txns', 0))
         client_name = row.get('client_name', 'Unknown')
-        share_info = share_lookup.get(client_name, {})
-        share = format_share(share_info.get('dflow_volume_pct', 0))
-        print(f"  {idx}. {client_name}: {vol} | {txns} txns | {share} DFlow share")
+        print(f"  {idx}. {client_name}: {vol} | {txns} txns")
+
+    print(f"\nVolume Share by Client:")
+    for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
+        dflow = format_share(share_info.get('dflow_volume_pct', 0))
+        okx = format_share(share_info.get('okx_volume_pct', 0))
+        jup = format_share(share_info.get('jupiter_volume_pct', 0))
+        print(f"  {idx}. {client_name}: DFlow {dflow} | OKX {okx} | Jupiter {jup}")
 
     # Send to Slack
     send_to_slack(data, share_lookup)
