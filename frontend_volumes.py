@@ -59,9 +59,10 @@ def fetch_share_data():
     for row in rows:
         name = row.get('client_name', '')
         share_lookup[name] = {
-            'yesterday_share_pct': row.get('yesterday_share_pct', 0),
-            'day_before_share_pct': row.get('day_before_share_pct', 0),
-            'share_pct_change': row.get('share_pct_change', 0),
+            'dflow_volume_pct': row.get('dflow_volume_pct', 0),
+            'okx_volume_pct': row.get('okx_volume_pct', 0),
+            'jupiter_volume_pct': row.get('jupiter_volume_pct', 0),
+            'dflow_share_pct_change': row.get('dflow_share_pct_change', 0),
         }
     return share_lookup
 
@@ -156,23 +157,25 @@ def build_slack_message(data, share_lookup):
 
     # ── Volume Share table ──
     share_lines = []
-    share_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
-    share_lines.append("`" + "─" * 52 + "`")
+    share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>8} {'OKX':>8} {'Jupiter':>8}   DFlow Δ`")
+    share_lines.append("`" + "─" * 56 + "`")
 
     for idx, row in enumerate(data[:10], 1):
         client_name = row.get('client_name', 'Unknown')
         share_info = share_lookup.get(client_name, {})
 
-        yesterday_share = share_info.get('yesterday_share_pct', 0)
-        day_before_share = share_info.get('day_before_share_pct', 0)
-        share_change = share_info.get('share_pct_change', 0)
+        dflow_pct = share_info.get('dflow_volume_pct', 0)
+        okx_pct = share_info.get('okx_volume_pct', 0)
+        jupiter_pct = share_info.get('jupiter_volume_pct', 0)
+        dflow_change = share_info.get('dflow_share_pct_change', 0)
 
         name_display = client_name[:14].ljust(14)
-        s1 = format_share(yesterday_share).rjust(10)
-        s2 = format_share(day_before_share).rjust(10)
-        row_base = f"`{idx:>2}  {name_display} {s1} {s2}`"
+        d = format_share(dflow_pct).rjust(8)
+        o = format_share(okx_pct).rjust(8)
+        j = format_share(jupiter_pct).rjust(8)
+        row_base = f"`{idx:>2}  {name_display} {d} {o} {j}`"
 
-        share_lines.append(row_base + format_change(share_change))
+        share_lines.append(row_base + format_change(dflow_change))
 
     share_text = "\n".join(share_lines)
 
@@ -285,8 +288,8 @@ def main():
         txns = format_txns(row.get('yesterday_txns', 0))
         client_name = row.get('client_name', 'Unknown')
         share_info = share_lookup.get(client_name, {})
-        share = format_share(share_info.get('yesterday_share_pct', 0))
-        print(f"  {idx}. {client_name}: {vol} | {txns} txns | {share} share")
+        share = format_share(share_info.get('dflow_volume_pct', 0))
+        print(f"  {idx}. {client_name}: {vol} | {txns} txns | {share} DFlow share")
 
     # Send to Slack
     send_to_slack(data, share_lookup)
