@@ -18,6 +18,7 @@ DUNE_API_KEY = os.getenv("DUNE_API_KEY_FRONTEND")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_FRONTEND")
 QUERY_ID = 6928394
 SHARE_QUERY_ID = 7377109
+FEE_QUERY_ID = 7426532
 
 
 def fetch_dune_data():
@@ -67,6 +68,24 @@ def fetch_share_data():
     return share_lookup
 
 
+def fetch_fee_data():
+    """Fetch latest results from Dune fee payers query."""
+    print(f"Fetching fee data from Dune query {FEE_QUERY_ID}...")
+    dune = DuneClient(DUNE_API_KEY)
+
+    try:
+        query_result = dune.get_latest_result(FEE_QUERY_ID)
+    except Exception as e:
+        print(f"No cached results found for fee query, executing... ({e})")
+        from dune_client.query import QueryBase
+        query = QueryBase(query_id=FEE_QUERY_ID)
+        query_result = dune.run_query(query)
+
+    rows = query_result.result.rows
+    print(f"Fetched {len(rows)} fee rows")
+    return rows
+
+
 def format_volume(value):
     """Format volume as $X.XXm or $X.XXk."""
     value = float(value)
@@ -104,8 +123,8 @@ def format_change(pct_change):
         return f"  📉 `-{abs(pct_change):.1f}%`"
 
 
-def build_slack_message(data, share_lookup):
-    """Build a clean, simple Slack Block Kit message with volume, txn, and share sections."""
+def build_slack_message(data, share_lookup, fee_data):
+    """Build a clean, simple Slack Block Kit message with volume, txn, share, and fee sections."""
 
     # Calculate dates
     today = datetime.now(timezone.utc).date()
@@ -176,6 +195,26 @@ def build_slack_message(data, share_lookup):
 
     share_text = "\n".join(share_lines)
 
+    # ── Fee Payers table ──
+    fee_lines = []
+    fee_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
+    fee_lines.append("`" + "─" * 52 + "`")
+
+    for idx, row in enumerate(fee_data[:10], 1):
+        client_name = row.get('client_name', 'Unknown')
+        yesterday_signers = row.get('yesterday_signers', 0) or 0
+        day_before_signers = row.get('day_before_signers', 0) or 0
+        signers_pct = row.get('signers_pct_change') or 0
+
+        name_display = client_name[:14].ljust(14)
+        s1 = format_txns(yesterday_signers).rjust(10)
+        s2 = format_txns(day_before_signers).rjust(10)
+        row_base = f"`{idx:>2}  {name_display} {s1} {s2}`"
+
+        fee_lines.append(row_base + format_change(signers_pct))
+
+    fee_text = "\n".join(fee_lines)
+
     # ── Assemble blocks ──
     blocks = [
         {
@@ -232,6 +271,21 @@ def build_slack_message(data, share_lookup):
         },
         {"type": "divider"},
         {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "👥 *Fee Payers*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": fee_text
+            }
+        },
+        {"type": "divider"},
+        {
             "type": "context",
             "elements": [
                 {
@@ -245,9 +299,9 @@ def build_slack_message(data, share_lookup):
     return blocks
 
 
-def send_to_slack(data, share_lookup):
+def send_to_slack(data, share_lookup, fee_data):
     """Send the formatted report to Slack."""
-    blocks = build_slack_message(data, share_lookup)
+    blocks = build_slack_message(data, share_lookup, fee_data)
 
     payload = {
         "text": "Top 10 Frontend Daily Volumes, Transactions & Market Share Report",
@@ -278,6 +332,9 @@ def main():
     # Fetch share data from Dune
     share_lookup = fetch_share_data()
 
+    # Fetch fee data from Dune
+    fee_data = fetch_fee_data()
+
     # Print data preview
     print(f"\nTop 10 Frontends by Volume:")
     for idx, row in enumerate(data[:10], 1):
@@ -293,8 +350,15 @@ def main():
         jup = format_share(share_info.get('jupiter_volume_pct', 0))
         print(f"  {idx}. {client_name}: DFlow {dflow} | OKX {okx} | Jupiter {jup}")
 
+    print(f"\nFee Payers by Client:")
+    for idx, row in enumerate(fee_data[:10], 1):
+        client_name = row.get('client_name', 'Unknown')
+        ys = format_txns(row.get('yesterday_signers', 0) or 0)
+        db = format_txns(row.get('day_before_signers', 0) or 0)
+        print(f"  {idx}. {client_name}: {ys} (yesterday) | {db} (day before)")
+
     # Send to Slack
-    send_to_slack(data, share_lookup)
+    send_to_slack(data, share_lookup, fee_data)
 
     print("\nJob completed!")
 
