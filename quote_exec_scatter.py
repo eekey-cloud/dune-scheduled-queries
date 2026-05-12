@@ -44,7 +44,7 @@ def fetch_dune_data():
 
 
 def create_scatter_plot(df):
-    """Create scatter plot grouped by venue with wide_bps on y-axis."""
+    """Create scatter plot grouped by venue with wide_bps on y-axis (symlog scale)."""
 
     # Ensure block_time is datetime
     df['block_time'] = pd.to_datetime(df['block_time'])
@@ -89,35 +89,31 @@ def create_scatter_plot(df):
                 linewidth=0.5 if marker == 'o' else 1.5
             )
 
-    # Configure y-axis with 0.1 bps increments for clear visualization
-    y_min = df['wide_bps'].min()
-    y_max = df['wide_bps'].max()
+    # --- LOG SCALE: use symlog so zero / negative wide_bps values are handled.
+    # linthresh = the range around 0 that stays linear; tune if your data is
+    # mostly very small (<1 bps) or very large (>10 bps).
+    ax.set_yscale('symlog', linthresh=1)
 
-    # Add some padding
-    y_range = y_max - y_min
-    y_padding = max(y_range * 0.1, 0.5)
-
-    ax.set_ylim(y_min - y_padding, y_max + y_padding)
-
-    # Set y-axis ticks at 0.1 bps intervals if range is reasonable
-    if y_range <= 10:
-        y_ticks = [i/10 for i in range(int((y_min - y_padding) * 10), int((y_max + y_padding) * 10) + 1)]
-        ax.set_yticks(y_ticks)
-    elif y_range <= 50:
-        y_ticks = [i/2 for i in range(int((y_min - y_padding) * 2), int((y_max + y_padding) * 2) + 1)]
-        ax.set_yticks(y_ticks)
-
-    # Add grid for better readability
-    ax.grid(True, alpha=0.3, linestyle='--')
+    # Add grid for better readability (show minor ticks too since spacing is log)
+    ax.grid(True, which='both', alpha=0.3, linestyle='--')
     ax.axhline(y=0, color='red', linestyle='-', alpha=0.5, linewidth=1)
 
     # Labels and title
     ax.set_xlabel('Block Time (UTC)', fontsize=12)
-    ax.set_ylabel('Wide BPS', fontsize=12)
-    ax.set_title(f'Quote vs Exec Spread by Venue\n(Last 24 hours - {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})', fontsize=14)
+    ax.set_ylabel('Wide BPS (symlog scale)', fontsize=12)
+    ax.set_title(
+        f'Quote vs Exec Spread by Venue\n'
+        f'(Last 24 hours - {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})',
+        fontsize=14
+    )
 
     # Legend
-    ax.legend(title='Venue (count)  [o=success, x=fail]', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
+    ax.legend(
+        title='Venue (count)  [o=success, x=fail]',
+        loc='upper left',
+        bbox_to_anchor=(1.02, 1),
+        fontsize=10
+    )
 
     # Rotate x-axis labels for better readability
     plt.xticks(rotation=45, ha='right')
@@ -130,7 +126,6 @@ def create_scatter_plot(df):
 
 def upload_to_freeimage(image_bytes):
     """Upload image to freeimage.host and return the URL."""
-    # Free image hosting API
     response = requests.post(
         "https://freeimage.host/api/1/upload",
         data={
