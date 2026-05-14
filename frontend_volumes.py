@@ -64,6 +64,10 @@ def fetch_share_data():
             'okx_volume_pct': row.get('okx_volume_pct', 0),
             'jupiter_volume_pct': row.get('jupiter_volume_pct', 0),
             'dflow_share_pct_change': row.get('dflow_share_pct_change', 0),
+            'dflow_txn_pct': row.get('dflow_txn_pct', 0),
+            'okx_txn_pct': row.get('okx_txn_pct', 0),
+            'jupiter_txn_pct': row.get('jupiter_txn_pct', 0),
+            'dflow_txn_share_change': row.get('dflow_txn_share_change', 0),
         }
     return share_lookup
 
@@ -195,6 +199,27 @@ def build_slack_message(data, share_lookup, fee_data):
 
     share_text = "\n".join(share_lines)
 
+    # ── Txn Share table ──
+    txn_share_lines = []
+    txn_share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>8} {'OKX':>8} {'Jupiter':>8}   DFlow Δ`")
+    txn_share_lines.append("`" + "─" * 56 + "`")
+
+    for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
+        dflow_pct = share_info.get('dflow_txn_pct', 0)
+        okx_pct = share_info.get('okx_txn_pct', 0)
+        jupiter_pct = share_info.get('jupiter_txn_pct', 0)
+        dflow_change = share_info.get('dflow_txn_share_change', 0)
+
+        name_display = client_name[:14].ljust(14)
+        d = format_share(dflow_pct).rjust(8)
+        o = format_share(okx_pct).rjust(8)
+        j = format_share(jupiter_pct).rjust(8)
+        row_base = f"`{idx:>2}  {name_display} {d} {o} {j}`"
+
+        txn_share_lines.append(row_base + format_change(dflow_change))
+
+    txn_share_text = "\n".join(txn_share_lines)
+
     # ── Fee Payers table ──
     fee_lines = []
     fee_lines.append(f"`{'#':>2}  {'Frontend':<14} {yesterday_str:>10} {day_before_str:>10}   Change`")
@@ -267,6 +292,21 @@ def build_slack_message(data, share_lookup, fee_data):
             "text": {
                 "type": "mrkdwn",
                 "text": share_text
+            }
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "🥧 *Transaction Market Share*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": txn_share_text
             }
         },
         {"type": "divider"},
@@ -348,6 +388,13 @@ def main():
         dflow = format_share(share_info.get('dflow_volume_pct', 0))
         okx = format_share(share_info.get('okx_volume_pct', 0))
         jup = format_share(share_info.get('jupiter_volume_pct', 0))
+        print(f"  {idx}. {client_name}: DFlow {dflow} | OKX {okx} | Jupiter {jup}")
+
+    print(f"\nTxn Share by Client:")
+    for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
+        dflow = format_share(share_info.get('dflow_txn_pct', 0))
+        okx = format_share(share_info.get('okx_txn_pct', 0))
+        jup = format_share(share_info.get('jupiter_txn_pct', 0))
         print(f"  {idx}. {client_name}: DFlow {dflow} | OKX {okx} | Jupiter {jup}")
 
     print(f"\nFee Payers by Client:")
