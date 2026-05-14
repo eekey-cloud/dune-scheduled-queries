@@ -63,7 +63,7 @@ def fetch_share_data():
             'dflow_volume_pct': row.get('dflow_volume_pct', 0),
             'okx_volume_pct': row.get('okx_volume_pct', 0),
             'jupiter_volume_pct': row.get('jupiter_volume_pct', 0),
-            'dflow_share_pct_change': row.get('dflow_share_pct_change', 0),
+            'dflow_volume_share_change': row.get('dflow_volume_share_change', 0),
             'dflow_txn_pct': row.get('dflow_txn_pct', 0),
             'okx_txn_pct': row.get('okx_txn_pct', 0),
             'jupiter_txn_pct': row.get('jupiter_txn_pct', 0),
@@ -187,7 +187,7 @@ def build_slack_message(data, share_lookup, fee_data):
         dflow_pct = share_info.get('dflow_volume_pct', 0)
         okx_pct = share_info.get('okx_volume_pct', 0)
         jupiter_pct = share_info.get('jupiter_volume_pct', 0)
-        dflow_change = share_info.get('dflow_share_pct_change', 0)
+        dflow_change = share_info.get('dflow_volume_share_change', 0)
 
         name_display = client_name[:14].ljust(14)
         d = format_share(dflow_pct).rjust(8)
