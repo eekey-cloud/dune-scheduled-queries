@@ -259,31 +259,37 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
 
     txn_text = "\n".join(txn_lines)
 
-    # ── Trades per Quote table ──
-    # Create case-insensitive lookup for matching Dune names to Grafana App names
+    # ── Trades per Quote table (Inner Join & Decimal Ratio) ──
     quotes_lookup = {k.lower(): v for k, v in quotes_data.items()}
     
     tq_lines = []
     tq_lines.append(f"`{'#':>2}  {'Frontend':<14} {'Quotes':>9} {'Trades':>9} {'Ratio':>7}`")
     tq_lines.append("`" + "─" * 46 + "`")
 
-    for idx, row in enumerate(data[:10], 1):
+    idx = 1
+    for row in data:
         client_name = row.get('client_name', 'Unknown')
+        
+        # INNER JOIN: Skip if the app name is not present in Grafana Quotes output
+        if client_name.lower() not in quotes_lookup:
+            continue
+            
         txns = float(row.get('yesterday_txns', 0) or 0)
-        quotes = quotes_lookup.get(client_name.lower(), 0)
+        quotes = quotes_lookup[client_name.lower()]
 
         name_display = client_name[:14].ljust(14)
         q_fmt = format_txns(quotes).rjust(9) if quotes > 0 else "N/A".rjust(9)
         t_fmt = format_txns(txns).rjust(9)
 
         if quotes > 0:
-            ratio = (txns / quotes) * 100
-            ratio_fmt = f"{ratio:.2f}%".rjust(7)
+            ratio = txns / quotes
+            ratio_fmt = f"{ratio:.4f}".rjust(7)
         else:
             ratio_fmt = "-".rjust(7)
 
         tq_lines.append(f"`{idx:>2}  {name_display} {q_fmt} {t_fmt} {ratio_fmt}`")
-
+        idx += 1
+        
     tq_text = "\n".join(tq_lines)
 
     # ── Volume Share table ──
@@ -511,14 +517,22 @@ def main():
 
     print(f"\nTrades per Quote:")
     quotes_lookup = {k.lower(): v for k, v in quotes_data.items()}
-    for idx, row in enumerate(data[:10], 1):
+    
+    idx = 1
+    for row in data:
         client_name = row.get('client_name', 'Unknown')
+        
+        # INNER JOIN for console output as well
+        if client_name.lower() not in quotes_lookup:
+            continue
+            
         txns = float(row.get('yesterday_txns', 0) or 0)
-        quotes = quotes_lookup.get(client_name.lower(), 0)
+        quotes = quotes_lookup[client_name.lower()]
         
         q_str = format_txns(quotes) if quotes > 0 else "N/A"
-        ratio = f"{(txns/quotes)*100:.2f}%" if quotes > 0 else "N/A"
+        ratio = f"{(txns/quotes):.4f}" if quotes > 0 else "N/A"
         print(f"  {idx}. {client_name}: {q_str} quotes | {format_txns(txns)} trades | Yield: {ratio}")
+        idx += 1
 
     print(f"\nVolume Share by Client:")
     for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
