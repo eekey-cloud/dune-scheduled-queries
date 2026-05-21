@@ -28,5 +28,6 @@ jobs:
         env:
           DUNE_API_KEY_FRONTEND: ${{ secrets.DUNE_API_KEY_FRONTEND }}
           SLACK_WEBHOOK_FRONTEND: ${{ secrets.SLACK_WEBHOOK_FRONTEND }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
         run: |
           python frontend_volumes.py
