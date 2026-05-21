@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Fetch top 10 frontend daily volumes & transactions from Dune and send a beautiful report to Slack.
-Shows client name, volumes, transactions with actual dates, and percent change.
-Also shows app share in volume from a separate Dune query.
+Fetch top 10 frontend daily volumes & transactions from Dune, 
+fetch Quotes from Grafana/Loki, and send a beautiful report to Slack.
+Shows client name, volumes, transactions, trades per quote, and percent change.
 """
 
 import os
@@ -14,11 +14,17 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# --- Config: Dune & Slack ---
 DUNE_API_KEY = os.getenv("DUNE_API_KEY_FRONTEND")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_FRONTEND")
 QUERY_ID = 6928394
 SHARE_QUERY_ID = 7377109
 FEE_QUERY_ID = 7426532
+
+# --- Config: Grafana ---
+GRAFANA_URL = os.getenv("GRAFANA_URL", "https://dflow.grafana.net")
+GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN")
+GRAFANA_DATASOURCE_UID = os.getenv("GRAFANA_DATASOURCE_UID", "grafanacloud-logs")
 
 
 def fetch_dune_data():
@@ -90,6 +96,82 @@ def fetch_fee_data():
     return rows
 
 
+def fetch_grafana_quotes():
+    """Fetch Quotes count from Grafana/Loki for yesterday."""
+    print("Fetching Quotes data from Grafana/Loki...")
+    if not GRAFANA_TOKEN:
+        print("Warning: GRAFANA_TOKEN missing from environment. Skipping Quotes.")
+        return {}
+
+    app_mapping = {
+        "227": "Kamino",
+        "154": "Fomo",
+        "350": "Coinbase",
+        "104": "Solflare",
+        "120": "Phantom",
+        "798": "Tessera"
+    }
+
+    query_regional = r"""
+    sum by (app_id) (
+      count_over_time(
+        {ecs_cluster="regional-prod"}
+        |~ "(?i)\"app_id\":\"(227|154|350|104|798)\""
+        |~ "(?i)finished processing request"
+        | regexp `(?i)"app_id":"(?P<app_id>227|154|350|104|798)"`
+        [24h]
+      )
+    )
+    """
+
+    query_phantom = r"""
+    sum by (app_id) (
+      count_over_time(
+        {ecs_task_arn=~".*us-east-1.*", container_name=~"(haze-aggregator-api|haze-aggregator-api-b)"}
+        |~ "(?i)\"app_id\":\"120\""
+        != "/health-check"
+        | regexp `(?i)"app_id":"(?P<app_id>120)"`
+        [24h]
+      )
+    )
+    """
+
+    # Evaluate at today's exact midnight UTC (to capture full 24h of yesterday)
+    now_utc = datetime.now(timezone.utc)
+    today_midnight_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    eval_time = today_midnight_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def run_loki_query(query_string):
+        url = f"{GRAFANA_URL}/api/datasources/proxy/uid/{GRAFANA_DATASOURCE_UID}/loki/api/v1/query"
+        try:
+            response = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {GRAFANA_TOKEN}"},
+                params={"query": query_string, "time": eval_time},
+            )
+            if response.status_code == 200:
+                return response.json().get("data", {}).get("result", [])
+            else:
+                print(f"Grafana error {response.status_code}: {response.text}")
+        except Exception as e:
+            print(f"Failed to query Grafana: {e}")
+        return []
+
+    all_results = []
+    all_results.extend(run_loki_query(query_regional))
+    all_results.extend(run_loki_query(query_phantom))
+
+    quotes_data = {}
+    for series in all_results:
+        metric = series.get("metric", {})
+        app_id = metric.get("app_id", "unknown")
+        app_name = app_mapping.get(app_id, f"App {app_id}")
+        total_quotes = float(series["value"][1])
+        quotes_data[app_name] = total_quotes
+
+    return quotes_data
+
+
 def format_volume(value):
     """Format volume as $X.XXm or $X.XXk."""
     value = float(value)
@@ -102,7 +184,7 @@ def format_volume(value):
 
 
 def format_txns(value):
-    """Format transaction count as X.XXk or raw number."""
+    """Format transaction count as X.XXm, X.XXk, or raw number."""
     value = float(value)
     if value >= 1_000_000:
         return f"{value / 1_000_000:.2f}m"
@@ -127,10 +209,9 @@ def format_change(pct_change):
         return f"  📉 `-{abs(pct_change):.1f}%`"
 
 
-def build_slack_message(data, share_lookup, fee_data):
-    """Build a clean, simple Slack Block Kit message with volume, txn, share, and fee sections."""
+def build_slack_message(data, share_lookup, fee_data, quotes_data):
+    """Build a clean, simple Slack Block Kit message with volume, txn, share, fee, and quote sections."""
 
-    # Calculate dates
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     day_before = today - timedelta(days=2)
@@ -177,6 +258,33 @@ def build_slack_message(data, share_lookup, fee_data):
         txn_lines.append(row_base + format_change(txn_pct))
 
     txn_text = "\n".join(txn_lines)
+
+    # ── Trades per Quote table ──
+    # Create case-insensitive lookup for matching Dune names to Grafana App names
+    quotes_lookup = {k.lower(): v for k, v in quotes_data.items()}
+    
+    tq_lines = []
+    tq_lines.append(f"`{'#':>2}  {'Frontend':<14} {'Quotes':>9} {'Trades':>9} {'Ratio':>7}`")
+    tq_lines.append("`" + "─" * 46 + "`")
+
+    for idx, row in enumerate(data[:10], 1):
+        client_name = row.get('client_name', 'Unknown')
+        txns = float(row.get('yesterday_txns', 0) or 0)
+        quotes = quotes_lookup.get(client_name.lower(), 0)
+
+        name_display = client_name[:14].ljust(14)
+        q_fmt = format_txns(quotes).rjust(9) if quotes > 0 else "N/A".rjust(9)
+        t_fmt = format_txns(txns).rjust(9)
+
+        if quotes > 0:
+            ratio = (txns / quotes) * 100
+            ratio_fmt = f"{ratio:.2f}%".rjust(7)
+        else:
+            ratio_fmt = "-".rjust(7)
+
+        tq_lines.append(f"`{idx:>2}  {name_display} {q_fmt} {t_fmt} {ratio_fmt}`")
+
+    tq_text = "\n".join(tq_lines)
 
     # ── Volume Share table ──
     share_lines = []
@@ -284,6 +392,21 @@ def build_slack_message(data, share_lookup, fee_data):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
+                "text": "📊 *Trades per Quote*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": tq_text
+            }
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
                 "text": "🥧 *Volume Market Share*"
             }
         },
@@ -330,7 +453,7 @@ def build_slack_message(data, share_lookup, fee_data):
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "via Dune Analytics"
+                    "text": "via Dune Analytics & Grafana Loki"
                 }
             ]
         }
@@ -339,9 +462,9 @@ def build_slack_message(data, share_lookup, fee_data):
     return blocks
 
 
-def send_to_slack(data, share_lookup, fee_data):
+def send_to_slack(data, share_lookup, fee_data, quotes_data):
     """Send the formatted report to Slack."""
-    blocks = build_slack_message(data, share_lookup, fee_data)
+    blocks = build_slack_message(data, share_lookup, fee_data, quotes_data)
 
     payload = {
         "text": "Top 10 Frontend Daily Volumes, Transactions & Market Share Report",
@@ -375,6 +498,9 @@ def main():
     # Fetch fee data from Dune
     fee_data = fetch_fee_data()
 
+    # Fetch Quotes from Grafana
+    quotes_data = fetch_grafana_quotes()
+
     # Print data preview
     print(f"\nTop 10 Frontends by Volume:")
     for idx, row in enumerate(data[:10], 1):
@@ -382,6 +508,17 @@ def main():
         txns = format_txns(row.get('yesterday_txns', 0))
         client_name = row.get('client_name', 'Unknown')
         print(f"  {idx}. {client_name}: {vol} | {txns} txns")
+
+    print(f"\nTrades per Quote:")
+    quotes_lookup = {k.lower(): v for k, v in quotes_data.items()}
+    for idx, row in enumerate(data[:10], 1):
+        client_name = row.get('client_name', 'Unknown')
+        txns = float(row.get('yesterday_txns', 0) or 0)
+        quotes = quotes_lookup.get(client_name.lower(), 0)
+        
+        q_str = format_txns(quotes) if quotes > 0 else "N/A"
+        ratio = f"{(txns/quotes)*100:.2f}%" if quotes > 0 else "N/A"
+        print(f"  {idx}. {client_name}: {q_str} quotes | {format_txns(txns)} trades | Yield: {ratio}")
 
     print(f"\nVolume Share by Client:")
     for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
@@ -405,7 +542,7 @@ def main():
         print(f"  {idx}. {client_name}: {ys} (yesterday) | {db} (day before)")
 
     # Send to Slack
-    send_to_slack(data, share_lookup, fee_data)
+    send_to_slack(data, share_lookup, fee_data, quotes_data)
 
     print("\nJob completed!")
 
