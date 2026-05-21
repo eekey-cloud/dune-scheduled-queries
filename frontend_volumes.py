@@ -259,12 +259,12 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
 
     txn_text = "\n".join(txn_lines)
 
-    # ── Trades per Quote table (Inner Join & Decimal Ratio) ──
+    # ── Trades per Quote table (Inner Join & 6 Decimal Ratio) ──
     quotes_lookup = {k.lower(): v for k, v in quotes_data.items()}
     
     tq_lines = []
-    tq_lines.append(f"`{'#':>2}  {'Frontend':<14} {'Quotes':>9} {'Trades':>9} {'Ratio':>7}`")
-    tq_lines.append("`" + "─" * 46 + "`")
+    tq_lines.append(f"`{'#':>2}  {'Frontend':<14} {'Quotes':>9} {'Trades':>9} {'Ratio':>10}`")
+    tq_lines.append("`" + "─" * 49 + "`")
 
     idx = 1
     for row in data:
@@ -283,9 +283,9 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
 
         if quotes > 0:
             ratio = txns / quotes
-            ratio_fmt = f"{ratio:.4f}".rjust(7)
+            ratio_fmt = f"{ratio:.6f}".rjust(10)
         else:
-            ratio_fmt = "-".rjust(7)
+            ratio_fmt = "-".rjust(10)
 
         tq_lines.append(f"`{idx:>2}  {name_display} {q_fmt} {t_fmt} {ratio_fmt}`")
         idx += 1
@@ -530,7 +530,7 @@ def main():
         quotes = quotes_lookup[client_name.lower()]
         
         q_str = format_txns(quotes) if quotes > 0 else "N/A"
-        ratio = f"{(txns/quotes):.4f}" if quotes > 0 else "N/A"
+        ratio = f"{(txns/quotes):.6f}" if quotes > 0 else "N/A"
         print(f"  {idx}. {client_name}: {q_str} quotes | {format_txns(txns)} trades | Yield: {ratio}")
         idx += 1
 
