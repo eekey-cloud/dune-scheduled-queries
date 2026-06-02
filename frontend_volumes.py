@@ -69,10 +69,12 @@ def fetch_share_data():
             'dflow_volume_pct': row.get('dflow_volume_pct', 0),
             'okx_volume_pct': row.get('okx_volume_pct', 0),
             'jupiter_volume_pct': row.get('jupiter_volume_pct', 0),
+            'titan_volume_pct': row.get('titan_volume_pct', 0),
             'dflow_volume_share_change': row.get('dflow_volume_share_change', 0),
             'dflow_txn_pct': row.get('dflow_txn_pct', 0),
             'okx_txn_pct': row.get('okx_txn_pct', 0),
             'jupiter_txn_pct': row.get('jupiter_txn_pct', 0),
+            'titan_txn_pct': row.get('titan_txn_pct', 0),
             'dflow_txn_share_change': row.get('dflow_txn_share_change', 0),
         }
     return share_lookup
@@ -294,20 +296,22 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
 
     # ── Volume Share table ──
     share_lines = []
-    share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>8} {'OKX':>8} {'Jupiter':>8}   DFlow Δ`")
+    share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>7} {'OKX':>7} {'Jupiter':>7} {'Titan':>7}   DFlow Δ`")
     share_lines.append("`" + "─" * 56 + "`")
 
     for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
         dflow_pct = share_info.get('dflow_volume_pct', 0)
         okx_pct = share_info.get('okx_volume_pct', 0)
         jupiter_pct = share_info.get('jupiter_volume_pct', 0)
+        titan_pct = share_info.get('titan_volume_pct', 0)
         dflow_change = share_info.get('dflow_volume_share_change', 0)
 
         name_display = client_name[:14].ljust(14)
-        d = format_share(dflow_pct).rjust(8)
-        o = format_share(okx_pct).rjust(8)
-        j = format_share(jupiter_pct).rjust(8)
-        row_base = f"`{idx:>2}  {name_display} {d} {o} {j}`"
+        d = format_share(dflow_pct).rjust(7)
+        o = format_share(okx_pct).rjust(7)
+        j = format_share(jupiter_pct).rjust(7)
+        t = format_share(titan_pct).rjust(7)
+        row_base = f"`{idx:>2}  {name_display} {d} {o} {j} {t}`"
 
         share_lines.append(row_base + format_change(dflow_change))
 
@@ -315,20 +319,22 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
 
     # ── Txn Share table ──
     txn_share_lines = []
-    txn_share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>8} {'OKX':>8} {'Jupiter':>8}   DFlow Δ`")
+    txn_share_lines.append(f"`{'#':>2}  {'Frontend':<14} {'DFlow':>7} {'OKX':>7} {'Jupiter':>7} {'Titan':>7}   DFlow Δ`")
     txn_share_lines.append("`" + "─" * 56 + "`")
 
     for idx, (client_name, share_info) in enumerate(share_lookup.items(), 1):
         dflow_pct = share_info.get('dflow_txn_pct', 0)
         okx_pct = share_info.get('okx_txn_pct', 0)
         jupiter_pct = share_info.get('jupiter_txn_pct', 0)
+        titan_pct = share_info.get('titan_txn_pct', 0)
         dflow_change = share_info.get('dflow_txn_share_change', 0)
 
         name_display = client_name[:14].ljust(14)
-        d = format_share(dflow_pct).rjust(8)
-        o = format_share(okx_pct).rjust(8)
-        j = format_share(jupiter_pct).rjust(8)
-        row_base = f"`{idx:>2}  {name_display} {d} {o} {j}`"
+        d = format_share(dflow_pct).rjust(7)
+        o = format_share(okx_pct).rjust(7)
+        j = format_share(jupiter_pct).rjust(7)
+        t = format_share(titan_pct).rjust(7)
+        row_base = f"`{idx:>2}  {name_display} {d} {o} {j} {t}`"
 
         txn_share_lines.append(row_base + format_change(dflow_change))
 
