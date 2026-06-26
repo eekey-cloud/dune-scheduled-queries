@@ -434,7 +434,7 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "🥧 *Transaction Market Share*"
+                "text": "🔢 *Transaction Market Share*"
             }
         },
         {
