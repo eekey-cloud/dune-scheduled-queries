@@ -20,6 +20,7 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_FRONTEND")
 QUERY_ID = 6928394
 SHARE_QUERY_ID = 7377109
 FEE_QUERY_ID = 7426532
+PHANTOM_REVENUE_QUERY_ID = 7856440
 
 # --- Config: Grafana ---
 GRAFANA_URL = os.getenv("GRAFANA_URL", "https://dflow.grafana.net")
@@ -95,6 +96,24 @@ def fetch_fee_data():
 
     rows = query_result.result.rows
     print(f"Fetched {len(rows)} fee rows")
+    return rows
+
+
+def fetch_phantom_revenue_data():
+    """Fetch latest results from Dune phantom revenue query."""
+    print(f"Fetching phantom revenue data from Dune query {PHANTOM_REVENUE_QUERY_ID}...")
+    dune = DuneClient(DUNE_API_KEY)
+
+    try:
+        query_result = dune.get_latest_result(PHANTOM_REVENUE_QUERY_ID)
+    except Exception as e:
+        print(f"No cached results found for phantom revenue query, executing... ({e})")
+        from dune_client.query import QueryBase
+        query = QueryBase(query_id=PHANTOM_REVENUE_QUERY_ID)
+        query_result = dune.run_query(query)
+
+    rows = query_result.result.rows
+    print(f"Fetched {len(rows)} phantom revenue rows")
     return rows
 
 
@@ -202,6 +221,16 @@ def format_share(value):
     return f"{value:.2f}%"
 
 
+def format_date(date_val):
+    """Format a Dune block_date value as 'Jun 29'."""
+    if isinstance(date_val, datetime):
+        return date_val.strftime("%b %d")
+    try:
+        return datetime.strptime(str(date_val)[:10], "%Y-%m-%d").strftime("%b %d")
+    except (ValueError, TypeError):
+        return str(date_val)
+
+
 def format_change(pct_change):
     """Return emoji + formatted percent change string."""
     pct_change = float(pct_change)
@@ -211,8 +240,8 @@ def format_change(pct_change):
         return f"  📉 `-{abs(pct_change):.1f}%`"
 
 
-def build_slack_message(data, share_lookup, fee_data, quotes_data):
-    """Build a clean, simple Slack Block Kit message with volume, txn, share, fee, and quote sections."""
+def build_slack_message(data, share_lookup, fee_data, quotes_data, phantom_revenue_data):
+    """Build a clean, simple Slack Block Kit message with volume, txn, share, fee, quote, and phantom revenue sections."""
 
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
@@ -360,6 +389,26 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
 
     fee_text = "\n".join(fee_lines)
 
+    # ── Phantom Revenue table ──
+    pr_lines = []
+    pr_lines.append(f"`{'Date':<8} {'All Phantom':>12} {'PM Rev':>10} {'% PM':>8}`")
+    pr_lines.append("`" + "─" * 42 + "`")
+
+    for row in phantom_revenue_data:
+        block_date = row.get('block_date', '')
+        all_rev = float(row.get('all_phantom_revenue', 0) or 0)
+        pm_rev = float(row.get('phantom_pm_revenue', 0) or 0)
+
+        date_display = format_date(block_date).ljust(8)
+        all_fmt = format_volume(all_rev).rjust(12)
+        pm_fmt = format_volume(pm_rev).rjust(10)
+        pct_pm = (pm_rev / all_rev * 100) if all_rev else 0
+        pct_fmt = format_share(pct_pm).rjust(8)
+
+        pr_lines.append(f"`{date_display} {all_fmt} {pm_fmt} {pct_fmt}`")
+
+    pr_text = "\n".join(pr_lines)
+
     # ── Assemble blocks ──
     blocks = [
         {
@@ -461,6 +510,21 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
         },
         {"type": "divider"},
         {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "🪙 *Phantom Revenue*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": pr_text
+            }
+        },
+        {"type": "divider"},
+        {
             "type": "context",
             "elements": [
                 {
@@ -474,9 +538,9 @@ def build_slack_message(data, share_lookup, fee_data, quotes_data):
     return blocks
 
 
-def send_to_slack(data, share_lookup, fee_data, quotes_data):
+def send_to_slack(data, share_lookup, fee_data, quotes_data, phantom_revenue_data):
     """Send the formatted report to Slack."""
-    blocks = build_slack_message(data, share_lookup, fee_data, quotes_data)
+    blocks = build_slack_message(data, share_lookup, fee_data, quotes_data, phantom_revenue_data)
 
     payload = {
         "text": "Top 10 Frontend Daily Volumes, Transactions & Market Share Report",
@@ -509,6 +573,9 @@ def main():
 
     # Fetch fee data from Dune
     fee_data = fetch_fee_data()
+
+    # Fetch phantom revenue data from Dune
+    phantom_revenue_data = fetch_phantom_revenue_data()
 
     # Fetch Quotes from Grafana
     quotes_data = fetch_grafana_quotes()
@@ -561,8 +628,16 @@ def main():
         db = format_txns(row.get('day_before_signers', 0) or 0)
         print(f"  {idx}. {client_name}: {ys} (yesterday) | {db} (day before)")
 
+    print(f"\nPhantom Revenue by Day:")
+    for row in phantom_revenue_data:
+        block_date = row.get('block_date', '')
+        all_rev = float(row.get('all_phantom_revenue', 0) or 0)
+        pm_rev = float(row.get('phantom_pm_revenue', 0) or 0)
+        pct = f"{(pm_rev / all_rev * 100):.2f}%" if all_rev else "N/A"
+        print(f"  {format_date(block_date)}: {format_volume(all_rev)} all | {format_volume(pm_rev)} PM | {pct} PM")
+
     # Send to Slack
-    send_to_slack(data, share_lookup, fee_data, quotes_data)
+    send_to_slack(data, share_lookup, fee_data, quotes_data, phantom_revenue_data)
 
     print("\nJob completed!")
 
