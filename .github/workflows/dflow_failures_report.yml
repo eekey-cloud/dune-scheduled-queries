@@ -28,7 +28,5 @@ jobs:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
           SLACK_WEBHOOK_FAILURES: ${{ secrets.SLACK_WEBHOOK_FAILURES }}
           GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
-          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
-          GRAFANA_DATASOURCE_UID: ${{ secrets.GRAFANA_DATASOURCE_UID }}
         run: |
           python dflow_failures_report.py
