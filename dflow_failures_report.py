@@ -113,7 +113,7 @@ def fetch_dune_data(refresh=True):
 # ---------------------------------------------------------------- Grafana --
 
 # Query 1: simulation failures grouped by the raw program log line.
-SIM_BY_LOG_QUERY = r"""sort_desc(topk(10, sum by (program_log) (
+SIM_BY_LOG_QUERY = r"""sort_desc(topk(20, sum by (program_log) (
   count_over_time(
     {container_name="haze-aggregator-api"} |= "Failed to simulate transaction"
     | regexp `.*Program log: (?P<program_log>[^\\"]*)`
