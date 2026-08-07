@@ -136,17 +136,29 @@ def fetch_dune_data(refresh=True):
 
 # ---------------------------------------------------------------- Grafana --
 
-# Query 1: simulation failures grouped by the raw program log line.
-SIM_BY_LOG_QUERY = r"""sort_desc(topk(10, sum by (program_log) (
+# Number of buckets pulled for each simulation section. Both queries and all
+# table/section labels derive from this, so they can't drift apart.
+SIM_TOPK = 10
+
+# Reduced-input retries are a normal part of the quote path, not a failure
+# worth reporting. Regex form (not a plain != ) so it also matches
+# `"is_reduced_input": true` if the serializer ever emits a space.
+REDUCED_INPUT_FILTER = '!~ `"is_reduced_input":\\s*true`'
+
+
+def build_sim_by_log_query(topk=SIM_TOPK):
+    """Query 1: simulation failures grouped by the raw program log line."""
+    return f"""sort_desc(topk({topk}, sum by (program_log) (
   count_over_time(
-    {container_name="haze-aggregator-api"} |= "Failed to simulate transaction"
+    {{container_name="haze-aggregator-api"}} |= "Failed to simulate transaction"
+    {REDUCED_INPUT_FILTER}
     | regexp `.*Program log: (?P<program_log>[^\\"]*)`
     | program_log != ""
     [24h])
 )))"""
 
 
-def build_sim_by_venue_query(topk=10):
+def build_sim_by_venue_query(topk=SIM_TOPK):
     """Query 2: simulation failures by (venue_name, err_code).
 
     Built as a nested label_replace chain rather than pasted literal, so the
@@ -158,6 +170,7 @@ def build_sim_by_venue_query(topk=10):
     inner = (
         '  count_over_time(\n'
         '    {container_name="haze-aggregator-api"} |= "Failed to simulate transaction"\n'
+        f'    {REDUCED_INPUT_FILTER}\n'
         '    | regexp `Program (?P<failing_program>[1-9A-HJ-NP-Za-km-z]{32,44}) failed:`\n'
         '    | regexp `err: InstructionError\\(\\d+, Custom\\((?P<err_code>\\d+)\\)\\)`\n'
         '    | failing_program != ""\n'
@@ -222,10 +235,9 @@ def fetch_simulation_failures():
           f"token=${GRAFANA_TOKEN_SRC} ***{GRAFANA_TOKEN[-4:]} (len {len(GRAFANA_TOKEN)})")
 
     eval_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print(f"Grafana: {GRAFANA_URL} uid={GRAFANA_DATASOURCE_UID} at {eval_time}")
 
     print("Fetching simulation failures by log line...")
-    raw_log = run_loki_query(SIM_BY_LOG_QUERY, eval_time, "by_log")
+    raw_log = run_loki_query(build_sim_by_log_query(), eval_time, "by_log")
     by_log = [
         {
             "program_log": s.get("metric", {}).get("program_log", "(none)"),
@@ -303,7 +315,7 @@ def build_sim_log_table(rows):
         )
 
     lines.append("-" * len(header))
-    lines.append(f"{'TOTAL (top 10)':<{W['log']}}{int(total):>{W['n']},}")
+    lines.append(f"{f'TOTAL (top {SIM_TOPK})':<{W['log']}}{int(total):>{W['n']},}")
     return "\n".join(lines)
 
 
@@ -327,7 +339,7 @@ def build_sim_venue_table(rows):
         )
 
     lines.append("-" * len(header))
-    lines.append(f"{'TOTAL (top 10)':<{W['venue'] + W['code']}}{int(total):>{W['n']},}")
+    lines.append(f"{f'TOTAL (top {SIM_TOPK})':<{W['venue'] + W['code']}}{int(total):>{W['n']},}")
     return "\n".join(lines)
 
 
@@ -373,7 +385,7 @@ def send_to_slack(df, sim_by_log, sim_by_venue):
     blocks.append({"type": "divider"})
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "🧪 *Simulation Failures by Program Log* (top 10)"},
+        "text": {"type": "mrkdwn", "text": f"🧪 *Simulation Failures by Program Log* (top {SIM_TOPK})"},
     })
     if sim_by_log:
         blocks.append({
@@ -390,7 +402,7 @@ def send_to_slack(df, sim_by_log, sim_by_venue):
     blocks.append({"type": "divider"})
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "🏛️ *Simulation Failures by Venue* (top 10)"},
+        "text": {"type": "mrkdwn", "text": f"🏛️ *Simulation Failures by Venue* (top {SIM_TOPK})"},
     })
     if sim_by_venue:
         blocks.append({
@@ -432,7 +444,7 @@ def diagnose():
         ("3. + program_log regexp",
          'sum(count_over_time({container_name="haze-aggregator-api"} '
          '|= "Failed to simulate transaction" '
-         '| regexp `.*Program log: (?P<program_log>[^\\\\"]*)` '
+         '| regexp `.*Program log: (?P<program_log>[^\\"]*)` '
          '| program_log != "" [24h]))'),
         ("4. + failing_program regexp",
          'sum(count_over_time({container_name="haze-aggregator-api"} '
@@ -446,7 +458,7 @@ def diagnose():
          '| regexp `err: InstructionError\\(\\d+, Custom\\((?P<err_code>\\d+)\\)\\)` '
          '| failing_program != "" [24h]))'),
         ("6. full by_log query", SIM_BY_LOG_QUERY),
-        ("7. full by_venue query", build_sim_by_venue_query()),
+        ("8. full by_venue query", build_sim_by_venue_query()),
     ]
 
     for name, q in stages:
