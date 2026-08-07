@@ -2,7 +2,7 @@ name: DFlow Swap Failures Report
 
 on:
   schedule:
-    # 2:17 PM UTC daily — off top-of-hour for scheduler reliability
+    # 2:01 PM UTC daily
     - cron: '01 14 * * *'
   workflow_dispatch:  # Allow manual trigger
 
@@ -27,5 +27,8 @@ jobs:
         env:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
           SLACK_WEBHOOK_FAILURES: ${{ secrets.SLACK_WEBHOOK_FAILURES }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_DATASOURCE_UID: ${{ secrets.GRAFANA_DATASOURCE_UID }}
         run: |
           python dflow_failures_report.py
