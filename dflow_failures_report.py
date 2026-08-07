@@ -20,6 +20,80 @@ QUERY_ID = 8251243
 
 SOLSCAN = "https://solscan.io/tx/"
 
+# --- Config: Grafana ---
+GRAFANA_URL = os.getenv("GRAFANA_URL", "https://dflow.grafana.net")
+GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN")
+GRAFANA_DATASOURCE_UID = os.getenv("GRAFANA_DATASOURCE_UID", "grafanacloud-logs")
+
+DFLOW_PROGRAM = "DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH"
+
+# program_id -> venue_name. Mirrors program_map in Dune query 8251243.
+# Order matters only in that later entries win; there are no duplicate ids.
+PROGRAM_MAP = [
+    (DFLOW_PROGRAM, "DFlow Swap Orchestrator"),
+    ("9H6tua7jkLhdm3w8BvgpTn5LZNU7g4ZynDmCiNN3q6Rp", "HumidiFi"),
+    ("BiSoNHVpsVZW2F7rx2eQ59yQwKxzU5NvBcmKshCSUypi", "BisonFi"),
+    ("2DNbzPochEcyCcWMbL4d9S3u9QqQEj5bbe6cSZFvKsbh", "BisonFi Predictions"),
+    ("JanusXpm3gsW3c9ErNoUgHppL8dGLvZKB7uekkJEYFP", "JanusFi"),
+    ("orafZ4BdfzikRRg498P23vG3EdEyMR7bYoYcD2zcwiD", "JanusFi"),
+    ("AQU1FRd7papthgdrwPTTq5JacJh8YtwEXaBfKU3bTz45", "Nexus"),
+    ("fastC7gqs2WUXgcyNna2BZAe9mte4zcTGprv3mv18N3", "Nexus"),
+    ("Tri3NG4HkZ6DddYPKoX2ehgkqFtDuej9Aspw5BmvSo4", "Triangle"),
+    ("TessVdML9pBGgG9yGks7o4HewRaXVAMuoVj4x83GLQH", "Tessera-V"),
+    ("kdexv89r17wFQN1MY3auCX7QgWFyshWAji2LsLRVUQU", "KDEX"),
+    ("HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ", "KDEX"),
+    ("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8", "Raydium AMM"),
+    ("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK", "Raydium CLMM"),
+    ("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C", "Raydium CPMM"),
+    ("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj", "Raydium LaunchLab"),
+    ("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo", "Meteora DLMM"),
+    ("Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB", "Meteora DAMM v1"),
+    ("24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi", "Meteora DAMM v1"),
+    ("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG", "Meteora DAMM v2"),
+    ("dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN", "Meteora DBC"),
+    ("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P", "Pump.fun"),
+    ("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA", "Pump.fun AMM"),
+    ("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ", "Pump.fun"),
+    ("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc", "Whirlpools"),
+    ("PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY", "Phoenix"),
+    ("MNFSTqtC93rEfYHB6hF82sKdZpUDFWkViLByLd1k1Ms", "Manifest"),
+    ("stkitrT1Uoy18Dk1fTrgPw8W6MVzoCfYoAFT4MLsmhq", "Sanctum StakeDex"),
+    ("5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx", "Sanctum Infinity"),
+    ("SoLFiHG9TfgtdUXUjWAxi3LtvYuFyDLVhBWxdMZxyCe", "SolFi"),
+    ("SV2EYYJyRz2YhfXwXnhNAevDEui5Q6yrfyo13WtupPF", "SolFi v2"),
+    ("E2uCGJ4TtYyKPGaK57UMfbs9sgaumwDEZF1aAY6fF3mS", "SolFi v2"),
+    ("gatorLx9aC1e5ZWAXscv5QRKiLXnLPLXjftVc81h1Hr", "GatorSwap"),
+    ("GAMMA7meSFWaBXF25oSUgmGRwaW6sCMFLmBNiMSdbHVT", "Gamma"),
+    ("ALPHAQmeA7bjrVuccPsYPiCvsi428SNwte66Srvs4pHA", "AlphaQ"),
+    ("obriQD1zbpyLz95G5n7nJe6a4DPjpFwa5XYPoNm113y", "Obric v2"),
+    ("Minimox7jqQmMpF6Z34DTNwE9iJyNkruzvvYQRaHpAP", "Obric v2"),
+    ("REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2", "Byreal CLMM"),
+    ("REALKVQcx2GMAyY46MUN3aTXG9xy1pXKRwPEC2swRpd", "Byreal Prop AMM"),
+    ("3ZfZY9sRNNaFUY4w6a12DU8KArgWjHgi6KTz83Y4RN7o", "Byreal Prop AMM"),
+    ("5pXzd9UiWrVxATCYWmgo5EbfxzXqHYhfSKGdCPXPz7vK", "Doppler CPMM"),
+    ("4carc9eePfE7jKUXdCAYMhcPf4awEFpZPrz1sTykdss1", "Doppler Launch"),
+    ("4pU2NUiPd3WFCw8vTbvyF3RSARhjMqoUejWi7eMJWp3U", "Doppler"),
+    ("GGMAUGEEPuUxXz7uMVmcZxgtifhVusZUjB42VBRRSg5T", "Doppler"),
+    ("4cPvEYosU3g7h4kA95XKbDhLxeJ8QQUf5rdx3K257ws2", "Doppler"),
+    ("BeyqffXEVgLpM3fQ1zjk8YnZzQN9sMVrCKtNKwSxNATr", "Doppler"),
+    ("9b1NvVimFW4aTh3fPFXXWG3dnYnBqiL4915G947N4Yhd", "Doppler"),
+    ("SSwapUtytfBdBn1b9NUGG6foMVPtcWgpRU32HToDUZr", "Saros AMM"),
+    ("1qbkdrr3z4ryLA7pZykqxvxWPoeifcVKo6ZG9CfkvVE", "Saros DLMM"),
+    ("swapNyd8XiQwJ6ianp9snpu4brUqFxadzvHebnAXjJZ", "Stabble Stable Swap"),
+    ("swapFpHZwjELNnjvThjajtiVmkz3yPQEHjLtka2fwHW", "Stabble Weighted Swap"),
+    ("vrTGoBuy5rYSxAfV3jaRJWHH6nN9WK4NRExGxsk1bCJ", "Vertigo"),
+    ("FLUXwEJnjZrURq3ZLBAQFzvR76bpcXscZkiZkiFHNhhR", "FluxSwap DAMM v2"),
+    ("FLiNTXPwppyoJabCoxc2uiiRygAHpmMXajiDXo2Ub1z", "Superis"),
+    ("ZERor4xhbUycZ6gb9ntrhqscUcZmAbQDjEAtCf4hbZY", "ZeroFi"),
+    ("HEAVENoP2qxoeuF8Dj2oT1GHEnu49U5mJYkdeC8BAX2o", "Heaven"),
+    ("SCoRcH8c2dpjvcJD6FiPbCSQyQgu3PcUAWj2Xxx3mqn", "Scorch"),
+    ("ojh19ojaKduoJZuaJADhcVGp4xt1TcdAvZmpVsCorch", "Scorch"),
+    ("FUTARELBfJfQ8RDGhg1wdhddq1odMAJUePHFuBYfUxKq", "MetaDAO"),
+    ("HpNfyc2Saw7RKkQd8nEL4khUcuPhQ7WwY1B2qjx8jxFq", "PancakeSwap"),
+    ("DRVSpZ2YUYYKgZP8XtLhAGtT1zYSCKzeHfb4DgRnrgqD", "Deriverse"),
+    ("ghosty4ZU1Qk1HN7Ymz4pZ15QfspzJZgSYFkdKN6ZLK", "Ghost"),
+]
+
 
 def fetch_dune_data(refresh=True):
     """Fetch results from Dune. refresh=True re-executes so the 24h window is live."""
@@ -34,6 +108,112 @@ def fetch_dune_data(refresh=True):
     df = pd.DataFrame(result.result.rows)
     print(f"Fetched {len(df)} rows")
     return df
+
+
+# ---------------------------------------------------------------- Grafana --
+
+# Query 1: simulation failures grouped by the raw program log line.
+SIM_BY_LOG_QUERY = r"""sort_desc(topk(10, sum by (program_log) (
+  count_over_time(
+    {container_name="haze-aggregator-api"} |= "Failed to simulate transaction"
+    | regexp `.*Program log: (?P<program_log>[^\\"]*)`
+    | program_log != ""
+    [24h])
+)))"""
+
+
+def build_sim_by_venue_query(topk=15):
+    """Query 2: simulation failures by (venue_name, err_code).
+
+    Built as a nested label_replace chain rather than pasted literal, so the
+    venue map stays in one place (PROGRAM_MAP) shared with the Dune query.
+    Innermost wrapper is the identity fallback — any unmapped program keeps its
+    address as venue_name — and each specific mapping wraps outward, so a
+    matching program id overwrites the fallback.
+    """
+    inner = (
+        '  count_over_time(\n'
+        '    {container_name="haze-aggregator-api"} |= "Failed to simulate transaction"\n'
+        '    | regexp `Program (?P<failing_program>[1-9A-HJ-NP-Za-km-z]{32,44}) failed:`\n'
+        '    | regexp `err: InstructionError\\(\\d+, Custom\\((?P<err_code>\\d+)\\)\\)`\n'
+        '    | failing_program != ""\n'
+        f'    | failing_program != "{DFLOW_PROGRAM}"\n'
+        '    [24h])'
+    )
+
+    tails = ['  "venue_name", "$1", "failing_program", "(.+)")']
+    for program_id, venue_name in PROGRAM_MAP:
+        tails.append(f'  "venue_name", "{venue_name}", "failing_program", "{program_id}")')
+
+    head = "label_replace(\n" * len(tails)
+    body = inner + ",\n" + ",\n".join(tails)
+
+    return (
+        f"sort_desc(topk({topk}, sum by (venue_name, err_code) (\n"
+        f"{head}{body}\n)))"
+    )
+
+
+def run_loki_query(query_string, eval_time):
+    """Instant query through Grafana's datasource proxy. Window comes from [24h]."""
+    url = (
+        f"{GRAFANA_URL}/api/datasources/proxy/uid/{GRAFANA_DATASOURCE_UID}"
+        "/loki/api/v1/query"
+    )
+    try:
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {GRAFANA_TOKEN}"},
+            params={"query": query_string, "time": eval_time},
+            timeout=120,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("data", {}).get("result", [])
+        print(f"Grafana error {resp.status_code}: {resp.text[:500]}")
+    except Exception as e:
+        print(f"Failed to query Grafana: {e}")
+    return []
+
+
+def fetch_simulation_failures():
+    """Return (by_log, by_venue) as lists of dicts, already sorted desc.
+
+    Missing token or a failed request degrades to empty lists — the report
+    still posts with the executed-failures section.
+    """
+    if not GRAFANA_TOKEN:
+        print("Warning: GRAFANA_TOKEN missing. Skipping simulation sections.")
+        return [], []
+
+    eval_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    print("Fetching simulation failures by log line...")
+    raw_log = run_loki_query(SIM_BY_LOG_QUERY, eval_time)
+    by_log = [
+        {
+            "program_log": s.get("metric", {}).get("program_log", "(none)"),
+            "count": float(s["value"][1]),
+        }
+        for s in raw_log
+    ]
+
+    print("Fetching simulation failures by venue and error code...")
+    raw_venue = run_loki_query(build_sim_by_venue_query(), eval_time)
+    by_venue = [
+        {
+            "venue_name": s.get("metric", {}).get("venue_name", "unknown"),
+            "err_code": s.get("metric", {}).get("err_code", "-"),
+            "count": float(s["value"][1]),
+        }
+        for s in raw_venue
+    ]
+
+    # sort_desc is applied server-side, but JSON ordering is not contractual.
+    by_log.sort(key=lambda r: r["count"], reverse=True)
+    by_venue.sort(key=lambda r: r["count"], reverse=True)
+
+    print(f"Fetched {len(by_log)} log buckets, {len(by_venue)} venue buckets")
+    return by_log, by_venue
 
 
 def truncate(s, n):
@@ -70,6 +250,50 @@ def build_table(df):
     return "\n".join(lines)
 
 
+def build_sim_log_table(rows):
+    """Simulation failures by program log line."""
+    W = {"log": 62, "n": 10, "pct": 7}
+    total = sum(r["count"] for r in rows) or 1
+
+    header = f"{'PROGRAM LOG':<{W['log']}}{'COUNT':>{W['n']}}{'PCT':>{W['pct']}}"
+    lines = [header, "-" * len(header)]
+
+    for r in rows:
+        log = truncate(r["program_log"].strip(), W["log"] - 1)
+        lines.append(
+            f"{log:<{W['log']}}{int(r['count']):>{W['n']},}"
+            f"{100.0 * r['count'] / total:>{W['pct']}.1f}"
+        )
+
+    lines.append("-" * len(header))
+    lines.append(f"{'TOTAL (top 20)':<{W['log']}}{int(total):>{W['n']},}")
+    return "\n".join(lines)
+
+
+def build_sim_venue_table(rows):
+    """Simulation failures by venue and custom error code."""
+    W = {"venue": 26, "code": 10, "n": 10, "pct": 7}
+    total = sum(r["count"] for r in rows) or 1
+
+    header = (
+        f"{'VENUE':<{W['venue']}}{'ERR CODE':>{W['code']}}"
+        f"{'COUNT':>{W['n']}}{'PCT':>{W['pct']}}"
+    )
+    lines = [header, "-" * len(header)]
+
+    for r in rows:
+        lines.append(
+            f"{truncate(r['venue_name'], W['venue'] - 1):<{W['venue']}}"
+            f"{truncate(r['err_code'], W['code'] - 1):>{W['code']}}"
+            f"{int(r['count']):>{W['n']},}"
+            f"{100.0 * r['count'] / total:>{W['pct']}.1f}"
+        )
+
+    lines.append("-" * len(header))
+    lines.append(f"{'TOTAL (top 15)':<{W['venue'] + W['code']}}{int(total):>{W['n']},}")
+    return "\n".join(lines)
+
+
 def build_samples(df, k=3):
     """Link a few sample txs for the biggest buckets."""
     out = []
@@ -79,7 +303,7 @@ def build_samples(df, k=3):
     return "\n".join(out)
 
 
-def send_to_slack(df):
+def send_to_slack(df, sim_by_log, sim_by_venue):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     total = int(df["failures"].sum())
 
@@ -93,8 +317,10 @@ def send_to_slack(df):
         },
         {
             "type": "context",
-            "elements": [{"type": "mrkdwn", "text": f"_{ts}_ · query `{QUERY_ID}`"}],
+            "elements": [{"type": "mrkdwn", "text": f"_{ts}_ · Dune `{QUERY_ID}` + Grafana Loki"}],
         },
+        {"type": "divider"},
+        {"type": "section", "text": {"type": "mrkdwn", "text": "⛓️ *Executed Failures* (on-chain, top 10)"}},
         {
             "type": "section",
             "fields": [
@@ -106,7 +332,41 @@ def send_to_slack(df):
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*Samples*\n{build_samples(df)}"}},
     ]
 
-    payload = {"text": f"DFlow swap failures 24h — {total:,} in top 10 buckets", "blocks": blocks}
+    # ── Simulation failures by program log ──
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "🧪 *Simulation Failures by Program Log* (top 20)"},
+    })
+    if sim_by_log:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"```\n{build_sim_log_table(sim_by_log)}\n```"},
+        })
+    else:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "_no data — Grafana unavailable or zero matches_"}],
+        })
+
+    # ── Simulation failures by venue + err code ──
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "🏛️ *Simulation Failures by Venue* (top 15)"},
+    })
+    if sim_by_venue:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"```\n{build_sim_venue_table(sim_by_venue)}\n```"},
+        })
+    else:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "_no data — Grafana unavailable or zero matches_"}],
+        })
+
+    payload = {"text": f"DFlow swap failures 24h — {total:,} executed in top 10 buckets", "blocks": blocks}
     resp = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=30)
 
     if resp.status_code == 200:
@@ -117,7 +377,7 @@ def send_to_slack(df):
 
 
 def main():
-    for name, val in (("DUNE_API_KEY", DUNE_API_KEY), ("SLACK_WEBHOOK_URL", SLACK_WEBHOOK_URL)):
+    for name, val in (("DUNE_API_KEY", DUNE_API_KEY), ("SLACK_WEBHOOK_FAILURES", SLACK_WEBHOOK_URL)):
         if not val:
             raise SystemExit(f"{name} is not set")
 
@@ -132,8 +392,19 @@ def main():
         raise SystemExit(f"Missing columns from Dune result: {missing}")
 
     df = df.sort_values("failures", ascending=False)
+    print("\nExecuted failures:")
     print(df[["scope", "owner", "error_type", "failures"]].to_string(index=False))
-    send_to_slack(df)
+
+    sim_by_log, sim_by_venue = fetch_simulation_failures()
+
+    if sim_by_log:
+        print("\nSimulation failures by program log:")
+        print(build_sim_log_table(sim_by_log))
+    if sim_by_venue:
+        print("\nSimulation failures by venue:")
+        print(build_sim_venue_table(sim_by_venue))
+
+    send_to_slack(df, sim_by_log, sim_by_venue)
 
 
 if __name__ == "__main__":
