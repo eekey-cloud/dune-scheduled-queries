@@ -21,9 +21,33 @@ QUERY_ID = 8251243
 SOLSCAN = "https://solscan.io/tx/"
 
 # --- Config: Grafana ---
-GRAFANA_URL = os.getenv("GRAFANA_URL", "https://dflow.grafana.net")
-GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN")
-GRAFANA_DATASOURCE_UID = os.getenv("GRAFANA_DATASOURCE_UID", "grafanacloud-logs")
+# The token may live under any of these names depending on which repo secret
+# was created first; take whichever is actually populated.
+_GRAFANA_TOKEN_KEYS = (
+    "GRAFANA_TOKEN",
+    "GRAFANA_API_TOKEN",
+    "GRAFANA_API_KEY",
+    "GRAFANA_CLOUD_TOKEN",
+    "GRAFANA_SERVICE_ACCOUNT_TOKEN",
+)
+
+
+def _first_env(keys):
+    """Return (value, name_it_came_from) for the first non-empty key."""
+    for k in keys:
+        v = (os.getenv(k) or "").strip()
+        if v:
+            return v, k
+    return None, None
+
+
+GRAFANA_TOKEN, GRAFANA_TOKEN_SRC = _first_env(_GRAFANA_TOKEN_KEYS)
+# .strip() + `or` guards against an unset GH secret resolving to "" and
+# clobbering the default.
+GRAFANA_URL = (os.getenv("GRAFANA_URL") or "").strip() or "https://dflow.grafana.net"
+GRAFANA_DATASOURCE_UID = (
+    (os.getenv("GRAFANA_DATASOURCE_UID") or "").strip() or "grafanacloud-logs"
+)
 
 DFLOW_PROGRAM = "DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH"
 
@@ -113,7 +137,7 @@ def fetch_dune_data(refresh=True):
 # ---------------------------------------------------------------- Grafana --
 
 # Query 1: simulation failures grouped by the raw program log line.
-SIM_BY_LOG_QUERY = r"""sort_desc(topk(20, sum by (program_log) (
+SIM_BY_LOG_QUERY = r"""sort_desc(topk(10, sum by (program_log) (
   count_over_time(
     {container_name="haze-aggregator-api"} |= "Failed to simulate transaction"
     | regexp `.*Program log: (?P<program_log>[^\\"]*)`
@@ -122,7 +146,7 @@ SIM_BY_LOG_QUERY = r"""sort_desc(topk(20, sum by (program_log) (
 )))"""
 
 
-def build_sim_by_venue_query(topk=15):
+def build_sim_by_venue_query(topk=10):
     """Query 2: simulation failures by (venue_name, err_code).
 
     Built as a nested label_replace chain rather than pasted literal, so the
@@ -154,7 +178,7 @@ def build_sim_by_venue_query(topk=15):
     )
 
 
-def run_loki_query(query_string, eval_time):
+def run_loki_query(query_string, eval_time, label=""):
     """Instant query through Grafana's datasource proxy. Window comes from [24h]."""
     url = (
         f"{GRAFANA_URL}/api/datasources/proxy/uid/{GRAFANA_DATASOURCE_UID}"
@@ -168,10 +192,15 @@ def run_loki_query(query_string, eval_time):
             timeout=120,
         )
         if resp.status_code == 200:
-            return resp.json().get("data", {}).get("result", [])
-        print(f"Grafana error {resp.status_code}: {resp.text[:500]}")
+            payload = resp.json()
+            result = payload.get("data", {}).get("result", [])
+            if not result:
+                print(f"  [{label}] HTTP 200 but empty result set. "
+                      f"resultType={payload.get('data', {}).get('resultType')}")
+            return result
+        print(f"  [{label}] Grafana error {resp.status_code}: {resp.text[:800]}")
     except Exception as e:
-        print(f"Failed to query Grafana: {e}")
+        print(f"  [{label}] Failed to query Grafana: {type(e).__name__}: {e}")
     return []
 
 
@@ -182,13 +211,21 @@ def fetch_simulation_failures():
     still posts with the executed-failures section.
     """
     if not GRAFANA_TOKEN:
-        print("Warning: GRAFANA_TOKEN missing. Skipping simulation sections.")
+        seen = [k for k in _GRAFANA_TOKEN_KEYS if k in os.environ]
+        print("Warning: no Grafana token found. Skipping simulation sections.")
+        print(f"  tried: {', '.join(_GRAFANA_TOKEN_KEYS)}")
+        print(f"  present but empty: {seen or 'none'}")
+        print("  -> add the token as a repo secret and pass it in the workflow env block.")
         return [], []
 
+    print(f"Grafana: url={GRAFANA_URL} uid={GRAFANA_DATASOURCE_UID} "
+          f"token=${GRAFANA_TOKEN_SRC} ***{GRAFANA_TOKEN[-4:]} (len {len(GRAFANA_TOKEN)})")
+
     eval_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"Grafana: {GRAFANA_URL} uid={GRAFANA_DATASOURCE_UID} at {eval_time}")
 
     print("Fetching simulation failures by log line...")
-    raw_log = run_loki_query(SIM_BY_LOG_QUERY, eval_time)
+    raw_log = run_loki_query(SIM_BY_LOG_QUERY, eval_time, "by_log")
     by_log = [
         {
             "program_log": s.get("metric", {}).get("program_log", "(none)"),
@@ -198,7 +235,7 @@ def fetch_simulation_failures():
     ]
 
     print("Fetching simulation failures by venue and error code...")
-    raw_venue = run_loki_query(build_sim_by_venue_query(), eval_time)
+    raw_venue = run_loki_query(build_sim_by_venue_query(), eval_time, "by_venue")
     by_venue = [
         {
             "venue_name": s.get("metric", {}).get("venue_name", "unknown"),
@@ -266,7 +303,7 @@ def build_sim_log_table(rows):
         )
 
     lines.append("-" * len(header))
-    lines.append(f"{'TOTAL (top 20)':<{W['log']}}{int(total):>{W['n']},}")
+    lines.append(f"{'TOTAL (top 10)':<{W['log']}}{int(total):>{W['n']},}")
     return "\n".join(lines)
 
 
@@ -290,7 +327,7 @@ def build_sim_venue_table(rows):
         )
 
     lines.append("-" * len(header))
-    lines.append(f"{'TOTAL (top 15)':<{W['venue'] + W['code']}}{int(total):>{W['n']},}")
+    lines.append(f"{'TOTAL (top 10)':<{W['venue'] + W['code']}}{int(total):>{W['n']},}")
     return "\n".join(lines)
 
 
@@ -336,7 +373,7 @@ def send_to_slack(df, sim_by_log, sim_by_venue):
     blocks.append({"type": "divider"})
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "🧪 *Simulation Failures by Program Log* (top 20)"},
+        "text": {"type": "mrkdwn", "text": "🧪 *Simulation Failures by Program Log* (top 10)"},
     })
     if sim_by_log:
         blocks.append({
@@ -353,7 +390,7 @@ def send_to_slack(df, sim_by_log, sim_by_venue):
     blocks.append({"type": "divider"})
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "🏛️ *Simulation Failures by Venue* (top 15)"},
+        "text": {"type": "mrkdwn", "text": "🏛️ *Simulation Failures by Venue* (top 10)"},
     })
     if sim_by_venue:
         blocks.append({
@@ -374,6 +411,75 @@ def send_to_slack(df, sim_by_log, sim_by_venue):
     else:
         print(f"Slack failed: {resp.status_code} - {resp.text}")
     return resp.status_code == 200
+
+
+def diagnose():
+    """Walk the query outward one stage at a time to find where it empties out."""
+    if not GRAFANA_TOKEN:
+        raise SystemExit(
+            "No Grafana token in env. Tried: " + ", ".join(_GRAFANA_TOKEN_KEYS)
+        )
+
+    eval_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"eval_time={eval_time} url={GRAFANA_URL} uid={GRAFANA_DATASOURCE_UID}")
+
+    stages = [
+        ("1. container only",
+         'sum(count_over_time({container_name="haze-aggregator-api"}[24h]))'),
+        ("2. + line filter",
+         'sum(count_over_time({container_name="haze-aggregator-api"} '
+         '|= "Failed to simulate transaction" [24h]))'),
+        ("3. + program_log regexp",
+         'sum(count_over_time({container_name="haze-aggregator-api"} '
+         '|= "Failed to simulate transaction" '
+         '| regexp `.*Program log: (?P<program_log>[^\\\\"]*)` '
+         '| program_log != "" [24h]))'),
+        ("4. + failing_program regexp",
+         'sum(count_over_time({container_name="haze-aggregator-api"} '
+         '|= "Failed to simulate transaction" '
+         '| regexp `Program (?P<failing_program>[1-9A-HJ-NP-Za-km-z]{32,44}) failed:` '
+         '| failing_program != "" [24h]))'),
+        ("5. + err_code regexp",
+         'sum(count_over_time({container_name="haze-aggregator-api"} '
+         '|= "Failed to simulate transaction" '
+         '| regexp `Program (?P<failing_program>[1-9A-HJ-NP-Za-km-z]{32,44}) failed:` '
+         '| regexp `err: InstructionError\\(\\d+, Custom\\((?P<err_code>\\d+)\\)\\)` '
+         '| failing_program != "" [24h]))'),
+        ("6. full by_log query", SIM_BY_LOG_QUERY),
+        ("7. full by_venue query", build_sim_by_venue_query()),
+    ]
+
+    for name, q in stages:
+        res = run_loki_query(q, eval_time, name)
+        if res:
+            vals = [float(s["value"][1]) for s in res]
+            print(f"{name}: {len(res)} series, total {sum(vals):,.0f}")
+        else:
+            print(f"{name}: EMPTY")
+
+    print("\nOne raw log line for reference:")
+    url = (f"{GRAFANA_URL}/api/datasources/proxy/uid/{GRAFANA_DATASOURCE_UID}"
+           "/loki/api/v1/query_range")
+    try:
+        r = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {GRAFANA_TOKEN}"},
+            params={
+                "query": '{container_name="haze-aggregator-api"} '
+                         '|= "Failed to simulate transaction"',
+                "limit": 1,
+                "start": int((datetime.now(timezone.utc).timestamp() - 86400) * 1e9),
+                "end": int(datetime.now(timezone.utc).timestamp() * 1e9),
+            },
+            timeout=60,
+        )
+        streams = r.json().get("data", {}).get("result", [])
+        if streams and streams[0].get("values"):
+            print(streams[0]["values"][0][1][:1500])
+        else:
+            print("(no matching lines in the last 24h)")
+    except Exception as e:
+        print(f"raw fetch failed: {e}")
 
 
 def main():
@@ -408,4 +514,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--diag" in sys.argv:
+        diagnose()
+    else:
+        main()
