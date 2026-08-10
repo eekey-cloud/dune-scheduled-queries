@@ -20,7 +20,7 @@ load_dotenv()
 
 DUNE_API_KEY = os.getenv("DUNE_API_KEYY")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
-QUERY_ID = 6720892  # Your Dune query ID
+QUERY_ID = 8286755  # Your Dune query ID
 
 
 def fetch_dune_data():
