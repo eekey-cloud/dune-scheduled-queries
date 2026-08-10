@@ -2,7 +2,6 @@ name: quote-exec-report
 
 on:
   schedule:
-    # 09:17 UTC, deliberately off the top of the hour — GitHub drops or delays
     # cron jobs scheduled on :00 under load.
     - cron: "15 19 * * *"
   workflow_dispatch:
