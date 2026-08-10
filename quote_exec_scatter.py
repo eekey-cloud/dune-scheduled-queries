@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-DUNE_API_KEY = os.getenv("DUNE_API_KEY")
+DUNE_API_KEY = os.getenv("DUNE_API_KEYY")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 QUERY_ID = 6720892  # Your Dune query ID
 
