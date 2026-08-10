@@ -2,12 +2,14 @@
 """
 Quote vs exec spread -> Slack. Runs in GitHub Actions.
 
+Repo path: quote_exec_scatter.py  (root)
+
 Uploads the chart via Slack's own file API, so the summary text and the image
 arrive in ONE call. There is no code path that posts text without a chart.
 
 Env:
   DUNE_API_KEY       Dune API key
-  SLACK_BOT_TOKEN    xoxb-... with files:write
+  SLACK_BOT_TOKEN    xoxb-... with files:write, bot invited to the channel
   SLACK_CHANNEL_ID   e.g. C0123456789
 
 Any failure raises, so the Actions run goes red instead of quietly
@@ -45,7 +47,7 @@ def env(name, *alts):
 
 def fetch():
     """Cached results first, execute if empty. A brand-new query has no cache."""
-    dune = DuneClient(env("DUNE_API_KEY", "DUNE_API_KEYY"))
+    dune = DuneClient(env("DUNE_API_KEYY"))
     rows = []
 
     if not FORCE_RUN:
@@ -165,7 +167,8 @@ def build_summary(df):
     # spread. Positive median means it delivered LESS than it quoted.
     flat = stats[(stats["nuniq"] <= 10) & (stats["n"] > 100)]
     for venue, r in flat.iterrows():
-        direction = "under-delivers vs quote" if r["median"] > 0 else "quotes conservatively"
+        direction = ("under-delivers vs quote" if r["median"] > 0
+                     else "quotes conservatively")
         lines.append(
             f"• `{venue}` is effectively constant at {r['median']:.2f} bps "
             f"({int(r['nuniq'])} distinct values / {int(r['n'])} fills) — {direction}"
@@ -178,8 +181,7 @@ def build_summary(df):
             f"— well above the rest"
         )
 
-    text = "\n".join(lines)
-    return text[:3900]      # Slack initial_comment limit
+    return "\n".join(lines)[:3900]      # Slack initial_comment limit
 
 
 def post_to_slack(image_bytes, comment):
