@@ -1,39 +1,41 @@
-name: Quote Exec Scatter Plot Report
+name: quote-exec-report
 
 on:
   schedule:
-    # Run at 7:15 PM UTC daily
-    - cron: '15 19 * * *'
-  workflow_dispatch:  # Allow manual trigger
+    # 09:17 UTC, deliberately off the top of the hour — GitHub drops or delays
+    # cron jobs scheduled on :00 under load.
+    - cron: "15 19 * * *"
+  workflow_dispatch:
 
 jobs:
-  generate-report:
+  report:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
+          cache: pip
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - run: pip install dune-client pandas matplotlib requests
 
-      - name: Run scatter plot script
+      - name: Run report
         env:
-          DUNE_API_KEY: ${{ secrets.DUNE_API_KEYY }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          python quote_exec_scatter.py
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+        run: python quote_exec_report.py
 
-      - name: Upload plot artifact
+      # Keeps the PNG on the run even when Slack posting failed, so you can
+      # see whether the problem was the data or the delivery.
+      - name: Upload chart artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: quote-exec-scatter-plot
-          path: quote_exec_scatter.png
-          retention-days: 7
+          name: quote-exec-chart
+          path: quote_exec_combined.png
+          if-no-files-found: warn
+          retention-days: 14
