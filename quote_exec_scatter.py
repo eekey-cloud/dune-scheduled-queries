@@ -1,290 +1,233 @@
 #!/usr/bin/env python3
 """
-Fetch Dune quote>exec data and create scatter plot grouped by venue.
-Sends the plot to Slack webhook.
+Quote vs exec spread -> Slack. Runs in GitHub Actions.
+
+Uploads the chart via Slack's own file API, so the summary text and the image
+arrive in ONE call. There is no code path that posts text without a chart.
+
+Env:
+  DUNE_API_KEY       Dune API key
+  SLACK_BOT_TOKEN    xoxb-... with files:write
+  SLACK_CHANNEL_ID   e.g. C0123456789
+
+Any failure raises, so the Actions run goes red instead of quietly
+delivering nothing.
 """
 
-import os
 import io
-import base64
-import requests
-import pandas as pd
-import matplotlib.pyplot as plt
+import os
+import sys
 from datetime import datetime, timezone
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import pandas as pd
+import requests
 from dune_client.client import DuneClient
 from dune_client.query import QueryBase
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+QUERY_ID = 8286755
+LINTHRESH = 1
+FORCE_RUN = False
+CHART = "quote_exec_combined.png"
 
-DUNE_API_KEY = os.getenv("DUNE_API_KEYY")
-SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
-QUERY_ID = 8286755  # Your Dune query ID
+REQUIRED = {"block_time", "venue", "tx_success", "wide_bps"}
 
 
-def fetch_dune_data():
-    """Fetch latest results from Dune query."""
-    print(f"Fetching data from Dune query {QUERY_ID}...")
-    dune = DuneClient(DUNE_API_KEY)
+def env(name, *alts):
+    for n in (name, *alts):
+        v = os.getenv(n)
+        if v:
+            return v
+    sys.exit(f"Missing required env var: {name}")
 
-    # First try to get latest results, if that fails, execute the query
-    try:
-        query_result = dune.get_latest_result(QUERY_ID)
-    except Exception as e:
-        print(f"No cached results found, executing query... ({e})")
-        query = QueryBase(query_id=QUERY_ID)
-        query_result = dune.run_query(query)
 
-    # Convert to DataFrame
-    rows = query_result.result.rows
+def fetch():
+    """Cached results first, execute if empty. A brand-new query has no cache."""
+    dune = DuneClient(env("DUNE_API_KEY", "DUNE_API_KEYY"))
+    rows = []
+
+    if not FORCE_RUN:
+        try:
+            res = dune.get_latest_result(QUERY_ID)
+            rows = res.result.rows if res and res.result else []
+            print(f"cached: {len(rows)} rows")
+        except Exception as e:
+            print(f"get_latest_result failed: {e}")
+
+    if not rows:
+        print("executing query...")
+        res = dune.run_query(QueryBase(query_id=QUERY_ID), ping_frequency=10)
+        rows = res.result.rows if res and res.result else []
+        print(f"fresh: {len(rows)} rows")
+
     df = pd.DataFrame(rows)
-    print(f"Fetched {len(df)} rows")
+    if df.empty:
+        raise RuntimeError(f"Query {QUERY_ID} returned 0 rows")
+
+    missing = REQUIRED - set(df.columns)
+    if missing:
+        raise RuntimeError(
+            f"Query {QUERY_ID} missing {sorted(missing)}; got {list(df.columns)}"
+        )
+
+    df["block_time"] = pd.to_datetime(df["block_time"])
+    df["wide_bps"] = pd.to_numeric(df["wide_bps"], errors="coerce")
+    for c in ("quote", "exec"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    bad = int(df["wide_bps"].isna().sum())
+    if bad:
+        print(f"dropping {bad} rows with unparseable wide_bps")
+        df = df.dropna(subset=["wide_bps"])
+
+    if df.empty:
+        raise RuntimeError("all rows dropped after cleaning")
     return df
 
 
-def create_scatter_plot(df):
-    """Create scatter plot grouped by venue with wide_bps on y-axis (symlog scale)."""
+def build_chart(df):
+    venues = sorted(df["venue"].unique())
+    cmap = plt.get_cmap("tab10" if len(venues) <= 10 else "tab20")
+    colors = {v: cmap(i % cmap.N) for i, v in enumerate(venues)}
 
-    # Ensure block_time is datetime
-    df['block_time'] = pd.to_datetime(df['block_time'])
-
-    # Get unique venues for coloring
-    venues = df['venue'].unique()
-    colors = plt.cm.tab10(range(len(venues)))
-    venue_colors = dict(zip(venues, colors))
-
-    # Create figure with appropriate size
-    fig, ax = plt.subplots(figsize=(14, 8))
-
-    # Track which venues have already been labeled (to avoid duplicate legend entries)
-    labeled_venues = set()
-
-    # Plot each venue+tx_success combo separately for correct markers
-    for venue in venues:
-        venue_data = df[df['venue'] == venue]
-        short_name = venue[:8] + "..." if len(venue) > 12 else venue
-
-        for tx_success, marker in [(True, 'o'), (False, 'x')]:
-            subset = venue_data[venue_data['tx_success'] == tx_success]
-            if subset.empty:
+    fig, ax = plt.subplots(figsize=(14, 7))
+    for venue, vdata in df.groupby("venue"):
+        for ok, marker, size in ((True, "o", 28), (False, "x", 44)):
+            sub = vdata[vdata["tx_success"].astype(bool) == ok]
+            if sub.empty:
                 continue
+            kw = dict(c=[colors[venue]], marker=marker, s=size, alpha=0.65)
+            # edgecolors is ignored on unfilled markers and warns if passed
+            kw.update({"edgecolors": "white", "linewidth": 0.4} if ok
+                      else {"linewidth": 1.4})
+            ax.scatter(sub["block_time"], sub["wide_bps"], **kw)
 
-            # Only add legend label once per venue
-            if venue not in labeled_venues:
-                label = f"{short_name} ({len(venue_data)})"
-                labeled_venues.add(venue)
-            else:
-                label = None
-
-            ax.scatter(
-                subset['block_time'],
-                subset['wide_bps'],
-                c=[venue_colors[venue]],
-                marker=marker,
-                label=label,
-                alpha=0.7,
-                s=50,
-                edgecolors='white' if marker == 'o' else venue_colors[venue],
-                linewidth=0.5 if marker == 'o' else 1.5
-            )
-
-    # --- LOG SCALE: use symlog so zero / negative wide_bps values are handled.
-    # linthresh = the range around 0 that stays linear; tune if your data is
-    # mostly very small (<1 bps) or very large (>10 bps).
-    ax.set_yscale('symlog', linthresh=1)
-
-    # Add grid for better readability (show minor ticks too since spacing is log)
-    ax.grid(True, which='both', alpha=0.3, linestyle='--')
-    ax.axhline(y=0, color='red', linestyle='-', alpha=0.5, linewidth=1)
-
-    # Labels and title
-    ax.set_xlabel('Block Time (UTC)', fontsize=12)
-    ax.set_ylabel('Wide BPS (symlog scale)', fontsize=12)
+    ax.set_yscale("symlog", linthresh=LINTHRESH)
+    ax.axhline(0, color="red", lw=1, alpha=0.5)
+    ax.grid(True, which="both", ls="--", alpha=0.3)
+    ax.set_xlabel("block_time (UTC)")
+    ax.set_ylabel(f"wide_bps (symlog, linthresh={LINTHRESH})")
     ax.set_title(
-        f'Quote vs Exec Spread by Venue\n'
-        f'(Last 24 hours - {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})',
-        fontsize=14
+        "Quote vs exec spread by venue\n"
+        f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}"
     )
-
-    # Legend
-    ax.legend(
-        title='Venue (count)  [o=success, x=fail]',
-        loc='upper left',
-        bbox_to_anchor=(1.02, 1),
-        fontsize=10
-    )
-
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=45, ha='right')
-
-    # Tight layout
-    plt.tight_layout()
-
-    return fig
-
-
-def upload_to_freeimage(image_bytes):
-    """Upload image to freeimage.host and return the URL."""
-    response = requests.post(
-        "https://freeimage.host/api/1/upload",
-        data={
-            "key": "6d207e02198a847aa98d0a2a901485a5",  # Public API key
-            "action": "upload",
-            "source": base64.b64encode(image_bytes).decode('utf-8'),
-            "format": "json"
-        }
-    )
-
-    if response.status_code == 200:
-        data = response.json()
-        if data.get('status_code') == 200:
-            return data['image']['url']
-
-    print(f"Failed to upload to freeimage.host: {response.status_code} - {response.text}")
-    return None
-
-
-def upload_to_imgbb(image_bytes):
-    """Upload image to imgbb.com and return the URL."""
-    response = requests.post(
-        "https://api.imgbb.com/1/upload",
-        data={
-            "key": "7a3e5c9f2d8b4e1a6c7d9e0f1a2b3c4d",  # You may need your own key
-            "image": base64.b64encode(image_bytes).decode('utf-8'),
-        }
-    )
-
-    if response.status_code == 200:
-        data = response.json()
-        if data.get('success'):
-            return data['data']['url']
-
-    print(f"Failed to upload to imgbb: {response.status_code}")
-    return None
-
-
-def upload_image(image_bytes):
-    """Try multiple image hosting services."""
-    # Try freeimage.host first
-    url = upload_to_freeimage(image_bytes)
-    if url:
-        return url
-
-    # Fallback - could add more services here
-    return None
-
-
-def send_to_slack(fig, df):
-    """Send the plot to Slack as an image."""
-
-    # Save plot to bytes buffer
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    buf.seek(0)
-    image_bytes = buf.getvalue()
-
-    # Try to upload image
-    print("Uploading chart to image host...")
-    image_url = upload_image(image_bytes)
-
-    if image_url:
-        print(f"Image uploaded: {image_url}")
-    else:
-        print("Failed to upload image, sending text-only summary")
-
-    # Calculate summary stats with quantiles
-    summary_stats = df.groupby('venue')['wide_bps'].agg([
-        'mean', 'min', 'max', 'count',
-        ('q25', lambda x: x.quantile(0.25)),
-        ('q50', lambda x: x.quantile(0.50)),
-        ('q75', lambda x: x.quantile(0.75)),
-        ('q95', lambda x: x.quantile(0.95))
-    ]).round(2)
-
-    # Calculate overall quantiles
-    overall_q25 = df['wide_bps'].quantile(0.25)
-    overall_q50 = df['wide_bps'].quantile(0.50)
-    overall_q75 = df['wide_bps'].quantile(0.75)
-    overall_q95 = df['wide_bps'].quantile(0.95)
-
-    # Create summary text
-    summary_text = f"*Quote vs Exec Spread Report*\n"
-    summary_text += f"_Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}_\n\n"
-    summary_text += f"*Total Transactions:* {len(df)}\n"
-    summary_text += f"*Wide BPS Range:* {df['wide_bps'].min():.2f} to {df['wide_bps'].max():.2f}\n"
-    summary_text += f"*Quantiles:* Q25={overall_q25:.2f}, Q50={overall_q50:.2f}, Q75={overall_q75:.2f}, Q95={overall_q95:.2f}\n\n"
-
-    # Add per-venue summary
-    summary_text += "*Summary by Venue:*\n"
-    for venue, stats in summary_stats.iterrows():
-        short_venue = venue[:12] + "..." if len(venue) > 15 else venue
-        summary_text += f"• `{short_venue}`: mean={stats['mean']:.2f}, min={stats['min']:.2f}, max={stats['max']:.2f}, count={int(stats['count'])}\n"
-        summary_text += f"   Q25={stats['q25']:.2f}, Q50={stats['q50']:.2f}, Q75={stats['q75']:.2f}, Q95={stats['q95']:.2f}\n"
-
-    # Build Slack blocks
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": summary_text
-            }
-        }
+    handles = [
+        plt.Line2D([], [], marker="o", ls="", color=colors[v],
+                   label=f"{v} ({int((df.venue == v).sum())})")
+        for v in venues
     ]
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.02, 1),
+              fontsize=9, title="venue (n)   o=ok  x=fail")
+    plt.xticks(rotation=45, ha="right")
+    fig.tight_layout()
 
-    # Add image if upload was successful
-    if image_url:
-        blocks.append({
-            "type": "image",
-            "image_url": image_url,
-            "alt_text": "Quote vs Exec Spread Scatter Plot"
-        })
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight")
+    fig.savefig(CHART, dpi=140, bbox_inches="tight")   # artifact for the run
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
 
-    # Send to Slack
-    payload = {
-        "text": "Quote vs Exec Spread Report",
-        "blocks": blocks
-    }
 
-    response = requests.post(SLACK_WEBHOOK_URL, json=payload)
+def build_summary(df):
+    stats = df.groupby("venue")["wide_bps"].agg(
+        n="count",
+        median="median",
+        q95=lambda s: s.quantile(0.95),
+        nuniq="nunique",
+    )
+    fails = df.groupby("venue")["tx_success"].apply(
+        lambda s: int((~s.astype(bool)).sum())
+    )
+    stats["fail_pct"] = (100 * fails / stats["n"]).round(2)
+    stats = stats.sort_values("n", ascending=False)
 
-    if response.status_code == 200:
-        print("Report with chart sent to Slack successfully!")
-    else:
-        print(f"Failed to send to Slack: {response.status_code} - {response.text}")
+    lines = [
+        "*Quote vs exec spread* — last 24h",
+        f"_{datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}_",
+        f"{len(df)} fills across {df['venue'].nunique()} venues  |  "
+        f"range {df['wide_bps'].min():.2f} to {df['wide_bps'].max():.2f} bps",
+        "",
+        "```",
+        f"{'venue':18s} {'n':>6s} {'median':>8s} {'q95':>8s} {'fail%':>7s} {'uniq':>6s}",
+    ]
+    for venue, r in stats.iterrows():
+        lines.append(
+            f"{venue[:18]:18s} {int(r['n']):6d} {r['median']:8.2f} "
+            f"{r['q95']:8.2f} {r['fail_pct']:7.2f} {int(r['nuniq']):6d}"
+        )
+    lines.append("```")
 
-    # Save the plot locally as well
-    fig.savefig('quote_exec_scatter.png', dpi=150, bbox_inches='tight')
-    print("Plot saved as quote_exec_scatter.png")
+    # A venue with a handful of distinct values is a fixed offset, not a
+    # spread. Positive median means it delivered LESS than it quoted.
+    flat = stats[(stats["nuniq"] <= 10) & (stats["n"] > 100)]
+    for venue, r in flat.iterrows():
+        direction = "under-delivers vs quote" if r["median"] > 0 else "quotes conservatively"
+        lines.append(
+            f"• `{venue}` is effectively constant at {r['median']:.2f} bps "
+            f"({int(r['nuniq'])} distinct values / {int(r['n'])} fills) — {direction}"
+        )
 
-    return response.status_code == 200
+    worst = stats["fail_pct"].idxmax()
+    if stats.loc[worst, "fail_pct"] > 5:
+        lines.append(
+            f"• `{worst}` failure rate {stats.loc[worst, 'fail_pct']:.1f}% "
+            f"— well above the rest"
+        )
+
+    text = "\n".join(lines)
+    return text[:3900]      # Slack initial_comment limit
+
+
+def post_to_slack(image_bytes, comment):
+    """One call delivers image + text. No path posts text alone."""
+    token = env("SLACK_BOT_TOKEN")
+    channel = env("SLACK_CHANNEL_ID")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = requests.post(
+        "https://slack.com/api/files.getUploadURLExternal",
+        headers=headers,
+        data={"filename": CHART, "length": len(image_bytes)},
+        timeout=30,
+    )
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(f"getUploadURLExternal failed: {j}")
+    upload_url, file_id = j["upload_url"], j["file_id"]
+
+    r = requests.post(
+        upload_url,
+        files={"file": (CHART, image_bytes, "image/png")},
+        timeout=120,
+    )
+    r.raise_for_status()
+
+    r = requests.post(
+        "https://slack.com/api/files.completeUploadExternal",
+        headers={**headers, "Content-Type": "application/json; charset=utf-8"},
+        json={
+            "files": [{"id": file_id, "title": "Quote vs exec spread"}],
+            "channel_id": channel,
+            "initial_comment": comment,
+        },
+        timeout=30,
+    )
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(f"completeUploadExternal failed: {j}")
+    print("posted to Slack")
 
 
 def main():
-    """Main function to fetch data, create plot, and send to Slack."""
-    print(f"Starting quote>exec scatter plot job at {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
-    # Fetch data from Dune
-    df = fetch_dune_data()
-
-    if df.empty:
-        print("No data fetched from Dune. Exiting.")
-        return
-
-    # Print data info
-    print(f"\nData columns: {df.columns.tolist()}")
-    print(f"Venues: {df['venue'].unique().tolist()}")
-    print(f"Wide BPS range: {df['wide_bps'].min():.2f} to {df['wide_bps'].max():.2f}")
-
-    # Create scatter plot
-    fig = create_scatter_plot(df)
-
-    # Send to Slack
-    send_to_slack(fig, df)
-
-    plt.close(fig)
-    print("\nJob completed!")
+    df = fetch()
+    image = build_chart(df)
+    comment = build_summary(df)
+    print(comment)
+    post_to_slack(image, comment)
 
 
 if __name__ == "__main__":
