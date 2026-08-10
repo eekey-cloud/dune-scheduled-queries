@@ -25,7 +25,7 @@ jobs:
 
       - name: Run report
         env:
-          DUNE_API_KEY: ${{ secrets.DUNE_API_KEYY }}
+          DUNE_API_KEYY: ${{ secrets.DUNE_API_KEYY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
         run: python quote_exec_scatter.py
