@@ -26,7 +26,7 @@ jobs:
 
       - name: Run scatter plot script
         env:
-          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEYY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           python quote_exec_scatter.py
