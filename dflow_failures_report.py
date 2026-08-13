@@ -158,25 +158,6 @@ def build_sim_by_log_query(topk=SIM_TOPK):
 )))"""
 
 
-# Slack renders attachment `color` as the vertical stripe on the left edge of
-# the block — it is the only colour primitive available, since mrkdwn has no
-# text colouring. #2eb886 is Slack's own "good"/green.
-TOTAL_SIM_COLOR = "#2eb886"
-TOTAL_SIM_LABEL = "Total number of simulations attempted in last 24 hours"
-
-
-def build_total_sim_query():
-    """Query 3: every non-reduced-input line from the aggregator in the window.
-
-    Verbatim as specified — a bare line filter on the stream, no `|= ` stage,
-    so this counts log lines rather than simulate calls specifically.
-    """
-    return f"""sum(count_over_time(
-  {{container_name="haze-aggregator-api"}}
-{REDUCED_INPUT_FILTER}
-[24h]))"""
-
-
 def build_sim_by_venue_query(topk=SIM_TOPK):
     """Query 2: simulation failures by (venue_name, err_code).
 
@@ -284,30 +265,6 @@ def fetch_simulation_failures():
     return by_log, by_venue
 
 
-def fetch_total_simulations():
-    """Return the scalar total, or None if Grafana is unavailable / no match.
-
-    Same degrade-gracefully contract as fetch_simulation_failures: None means
-    the section renders as "no data" instead of blocking the whole report.
-    """
-    if not GRAFANA_TOKEN:
-        print("Warning: no Grafana token found. Skipping total-simulations section.")
-        return None
-
-    eval_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print("Fetching total simulations attempted...")
-    res = run_loki_query(build_total_sim_query(), eval_time, "total_sims")
-    if not res:
-        return None
-
-    # `sum(...)` collapses to a single series with no labels.
-    try:
-        return int(float(res[0]["value"][1]))
-    except (KeyError, IndexError, ValueError, TypeError) as e:
-        print(f"  [total_sims] unexpected response shape: {type(e).__name__}: {e}")
-        return None
-
-
 def truncate(s, n):
     s = str(s)
     return s if len(s) <= n else s[: n - 1] + "…"
@@ -386,28 +343,6 @@ def build_sim_venue_table(rows):
     return "\n".join(lines)
 
 
-def build_total_sim_attachment(total):
-    """Green-striped attachment carrying the label in bold plus the value.
-
-    Legacy `text` + `mrkdwn_in` rather than nested blocks: incoming webhooks
-    accept both, but this form is the one guaranteed to keep the colour stripe.
-    """
-    if total is None:
-        return {
-            "color": "#9aa0a6",
-            "fallback": f"{TOTAL_SIM_LABEL}: no data",
-            "text": f"*{TOTAL_SIM_LABEL}*\n_no data — Grafana unavailable or zero matches_",
-            "mrkdwn_in": ["text"],
-        }
-
-    return {
-        "color": TOTAL_SIM_COLOR,
-        "fallback": f"{TOTAL_SIM_LABEL}: {total:,}",
-        "text": f"🟢 *{TOTAL_SIM_LABEL}*\n*{total:,}*",
-        "mrkdwn_in": ["text"],
-    }
-
-
 def build_samples(df, k=3):
     """Link a few sample txs for the biggest buckets."""
     out = []
@@ -481,15 +416,6 @@ def send_to_slack(df, sim_by_log, sim_by_venue):
         })
 
     payload = {"text": f"DFlow swap failures 24h — {total:,} executed in top 10 buckets", "blocks": blocks}
-
-    # ── Total simulations attempted (green attachment, renders under blocks) ──
-    # Fetched here rather than in main() so neither main() nor this function's
-    # signature had to change.
-    sim_total = fetch_total_simulations()
-    print(f"\n{TOTAL_SIM_LABEL}: "
-          f"{'n/a' if sim_total is None else format(sim_total, ',')}")
-    payload["attachments"] = [build_total_sim_attachment(sim_total)]
-
     resp = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=30)
 
     if resp.status_code == 200:
