@@ -293,8 +293,8 @@ class Page:
 # ============================== page parts ==============================
 def header(p, d):
     rows = list(d["frontends"].items())
-    title = p.text(.35, 11.42, "Top 10 frontends on DFlow", 27, TEXT, "bold")
-    p.text(.35 + p.width(title) + .25, 11.42, f"{d['day']}  vs  {d['prev']}", 16, MUTED, "medium")
+    day = p.text(.35, 11.42, d["day"], 27, TEXT, "bold")
+    p.text(.35 + p.width(day) + .22, 11.42, f"vs  {d['prev']}", 27, MUTED, "medium")
 
     gap, x0, y0, th = .2, .3, 10.15, .95
     tw = (W - 2 * x0 - gap) / 2
@@ -500,11 +500,20 @@ def section_payers(p, d, x0, y0, w, h):
                  f"Most active: {active[0]} ({active[3]:.1f} txns each). Biggest spend: {spend[0]} ({usd(spend[4])}).")
     p.section_title(x0, y0 + h, 3, "Fee payers", note, 52)
 
-    col = (w - .4) / len(rows)
-    base, rmax, fmax = y0 + h - 2.5, min(.5, col / 2 - .04), rows[0][1]
+    # each circle gets a slot as wide as the circle (but never narrower than its name)
+    fmax, room = rows[0][1], w - .4
+    min_slot = min(.85, room / len(rows))
+    size = lambda rm, fp: max(.07, rm * math.sqrt(fp / fmax))
+    rmax = .65
+    while rmax > .2 and sum(max(2 * size(rmax, r[1]) + .1, min_slot) for r in rows) > room:
+        rmax -= .01
+    slots = [max(2 * size(rmax, r[1]) + .1, min_slot) for r in rows]
+    space_top, space_bottom = y0 + h - 1.25, y0 + .2          # room left under the note
+    base = (space_top + space_bottom) / 2 - (2 * rmax - .62) / 2  # circles + names + pills sit in the middle
+    left = x0 + (w - sum(slots)) / 2
     for i, (n, fp, fpp, tpw, vpw) in enumerate(rows):
-        cx, c = x0 + .2 + col * (i + .5), color(n)
-        r = max(.07, rmax * math.sqrt(fp / fmax))
+        cx, c = left + sum(slots[:i]) + slots[i] / 2, color(n)
+        r = size(rmax, fp)
         p.orb(cx, base + r, r, c)
         if r >= .3:
             p.text(cx, base + r, cnt(fp), 13, "#0B1020", "bold", ha="center", va="center", z=8)
@@ -512,13 +521,6 @@ def section_payers(p, d, x0, y0, w, h):
             p.text(cx, base + 2 * r + .14, cnt(fp), 12, TEXT, "semibold", ha="center", va="center")
         p.text(cx, base - .22, n, 12, TEXT, "semibold", ha="center", va="center")
         p.chg_pill(cx, base - .5, pct(fp, fpp), 9, ha="center")
-        for j, val in enumerate((f"{tpw:.1f}" if tpw is not None else "–", usd(vpw) if vpw is not None else "–")):
-            p.text(cx, base - 1.08 - j * .62, val, 12.5, TEXT, "semibold", ha="center", va="center")
-    for j, label in enumerate(("txns per wallet", "$ volume per wallet")):
-        yl = base - .84 - j * .62
-        p.ax.plot([x0 + .3, x0 + w - .3], [yl + .02, yl + .02], color=TRACK, lw=1, zorder=1)
-        p.text(x0 + w / 2, yl, label, 8.5, FAINT, ha="center", va="center",
-               bbox=dict(boxstyle="round,pad=0.25", fc=CARD, ec="none"))
 
 
 def section_phantom(p, d, x0, y0, w, h):
