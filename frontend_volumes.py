@@ -488,9 +488,7 @@ def section_payers(p, d, x0, y0, w, h):
         p.section_title(x0, y0 + h, 3, "Fee payers", "", 52)
         return p.no_data(x0, y0, w, h)
     rows = [(n, fp, fpp) for n, (fp, fpp) in rows]
-    tot, totp = sum(r[1] for r in rows), sum(r[2] for r in rows)
-    note = f"{cnt(tot)} fee payers ({chg(pct(tot, totp))})."
-    p.section_title(x0, y0 + h, 3, "Fee payers", note, 52)
+    p.section_title(x0, y0 + h, 3, "Fee payers", "Fee-paying addresses across various wallets.", 52)
 
     # each circle gets a slot as wide as the circle (but never narrower than its name)
     fmax, room = rows[0][1], w - .4
