@@ -6,9 +6,13 @@ on:
     - cron: '0 13 * * *'
   workflow_dispatch:  # Allow manual trigger
 
+permissions:
+  contents: write     # lets the job push the report image to the frontend-report-charts branch
+
 jobs:
   generate-report:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -23,11 +27,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install matplotlib numpy
 
       - name: Run frontend volumes script
         env:
           DUNE_API_KEY_FRONTEND: ${{ secrets.DUNE_API_KEY_FRONTEND }}
           SLACK_WEBHOOK_FRONTEND: ${{ secrets.SLACK_WEBHOOK_FRONTEND }}
-          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python frontend_volumes.py
+          python -u frontend_volumes.py
+
+      - name: Save the report image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-report
+          path: charts/frontend_report.png
+          retention-days: 7
+          if-no-files-found: ignore
