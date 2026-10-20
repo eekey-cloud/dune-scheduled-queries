@@ -483,21 +483,13 @@ def section_share(p, d, x0, y0, w, h):
 def section_payers(p, d, x0, y0, w, h):
     """3. Fee payers (unique wallets) per frontend."""
     p.card(x0, y0, w, h)
-    fr = {k.lower(): v for k, v in d["frontends"].items()}
     rows = sorted(d["fee_payers"].items(), key=lambda kv: -kv[1][0])[:6]
     if not rows or not rows[0][1][0]:
         p.section_title(x0, y0 + h, 3, "Fee payers", "", 52)
         return p.no_data(x0, y0, w, h)
-    rows = [(n, fp, fpp, *(lambda f: (f[2] / fp, f[0] / fp) if f and fp else (None, None))(fr.get(n.lower())))
-            for n, (fp, fpp) in rows]
+    rows = [(n, fp, fpp) for n, (fp, fpp) in rows]
     tot, totp = sum(r[1] for r in rows), sum(r[2] for r in rows)
-    known = [r for r in rows if r[3] is not None]
-    note = f"{cnt(tot)} fee payers ({chg(pct(tot, totp))}). "
-    if known:
-        active, spend = max(known, key=lambda r: r[3]), max(known, key=lambda r: r[4])
-        note += (f"{active[0]} wallets are the most active ({active[3]:.1f} txns) and spend the most "
-                 f"({usd(active[4])})." if active is spend else
-                 f"Most active: {active[0]} ({active[3]:.1f} txns each). Biggest spend: {spend[0]} ({usd(spend[4])}).")
+    note = f"{cnt(tot)} fee payers ({chg(pct(tot, totp))})."
     p.section_title(x0, y0 + h, 3, "Fee payers", note, 52)
 
     # each circle gets a slot as wide as the circle (but never narrower than its name)
@@ -511,7 +503,7 @@ def section_payers(p, d, x0, y0, w, h):
     space_top, space_bottom = y0 + h - 1.25, y0 + .2          # room left under the note
     base = (space_top + space_bottom) / 2 - (2 * rmax - .62) / 2  # circles + names + pills sit in the middle
     left = x0 + (w - sum(slots)) / 2
-    for i, (n, fp, fpp, tpw, vpw) in enumerate(rows):
+    for i, (n, fp, fpp) in enumerate(rows):
         cx, c = left + sum(slots[:i]) + slots[i] / 2, color(n)
         r = size(rmax, fp)
         p.orb(cx, base + r, r, c)
