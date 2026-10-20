@@ -2,7 +2,7 @@
 """
 Daily top-10 frontend report for Slack, sent as one image.
 
-1. Pulls 4 Dune queries: volume & txns, market share, fee payers, Phantom revenue
+1. Pulls 3 Dune queries: volume & txns, market share, Phantom revenue
 2. Draws one PNG: charts/frontend_report.png
 3. Pushes the PNG to the CHART_BRANCH branch of this repo (the branch is replaced every run)
 4. Posts it to Slack with the incoming webhook, using a raw.githubusercontent.com link
@@ -51,7 +51,6 @@ DUNE_API_KEY = os.getenv("DUNE_API_KEY_FRONTEND")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_FRONTEND")
 QUERY_ID = 6928394
 SHARE_QUERY_ID = 7377109
-FEE_QUERY_ID = 7426532
 PHANTOM_REVENUE_QUERY_ID = 7856440
 
 # --- Config: where the image lives (a branch of this repo, replaced every run) ---
@@ -89,7 +88,7 @@ def f0(x):
         return 0.0
 
 
-def build_data(vol_rows, share_rows, fee_rows, rev_rows):
+def build_data(vol_rows, share_rows, rev_rows):
     today = datetime.now(timezone.utc).date()
     day, prev = today - timedelta(days=1), today - timedelta(days=2)
 
@@ -102,14 +101,12 @@ def build_data(vol_rows, share_rows, fee_rows, rev_rows):
         "vol_chg": f0(r.get("dflow_volume_share_change")),
         "txns_chg": f0(r.get("dflow_txn_share_change")),
     } for r in share_rows}
-    fee_payers = {r.get("client_name", "Unknown"): (f0(r.get("yesterday_signers")), f0(r.get("day_before_signers")))
-                  for r in fee_rows}
     rev = sorted(rev_rows, key=lambda r: str(r.get("block_date", "")))[-2:]
     rev = [(f0(r.get("all_phantom_revenue")), f0(r.get("phantom_pm_revenue"))) for r in rev]
     rev = [(0.0, 0.0)] * (2 - len(rev)) + rev  # older day first
 
     return {"day": day.strftime("%b %d"), "prev": prev.strftime("%b %d"), "long_day": day.strftime("%A, %B %d, %Y"),
-            "frontends": frontends, "market_share": market_share, "fee_payers": fee_payers,
+            "frontends": frontends, "market_share": market_share,
             "phantom_rev": {"prev": rev[0], "today": rev[1]}}
 
 
@@ -423,7 +420,7 @@ def section_share(p, d, x0, y0, w, h):
     vol_of = {k.lower(): v[0] for k, v in d["frontends"].items()}
     items = sorted(d["market_share"].items(), key=lambda kv: -vol_of.get(kv[0].lower(), 0))
     if not items:
-        p.section_title(x0, y0 + h, 2, "Volume & txn market share", "", 92)
+        p.section_title(x0, y0 + h, 2, "Volume & txn market share", "", 150)
         return p.no_data(x0, y0, w, h)
 
     fell = [n for n, s in items if s["vol_chg"] < 0]
@@ -433,7 +430,7 @@ def section_share(p, d, x0, y0, w, h):
     note += f"; biggest drop at {worst[0]} ({chg(worst[1]['vol_chg'])}). " if fell else ". "
     note += (f"At {gap[0]}, DFlow has {gap[1]['txns']['DFlow']:.0f}% of txns and "
              f"{gap[1]['vol']['DFlow']:.0f}% of volume.")
-    p.section_title(x0, y0 + h, 2, "Volume & txn market share", note, 92)
+    p.section_title(x0, y0 + h, 2, "Volume & txn market share", note, 150)
 
     used = lambda s, r: s["vol"].get(r, 0) > 0 or s["txns"].get(r, 0) > 0
     lx, ly = x0 + .3, y0 + h - 1.38
@@ -480,52 +477,19 @@ def section_share(p, d, x0, y0, w, h):
             p.chg_pill(P_L, y, change, 9)
 
 
-def section_payers(p, d, x0, y0, w, h):
-    """3. Fee payers (unique wallets) per frontend."""
-    p.card(x0, y0, w, h)
-    rows = sorted(d["fee_payers"].items(), key=lambda kv: -kv[1][0])[:6]
-    if not rows or not rows[0][1][0]:
-        p.section_title(x0, y0 + h, 3, "Fee payers", "", 52)
-        return p.no_data(x0, y0, w, h)
-    rows = [(n, fp, fpp) for n, (fp, fpp) in rows]
-    p.section_title(x0, y0 + h, 3, "Fee payers", "Fee-paying addresses across various wallets.", 52)
-
-    # each circle gets a slot as wide as the circle (but never narrower than its name)
-    fmax, room = rows[0][1], w - .4
-    min_slot = min(.85, room / len(rows))
-    size = lambda rm, fp: max(.07, rm * math.sqrt(fp / fmax))
-    rmax = .65
-    while rmax > .2 and sum(max(2 * size(rmax, r[1]) + .1, min_slot) for r in rows) > room:
-        rmax -= .01
-    slots = [max(2 * size(rmax, r[1]) + .1, min_slot) for r in rows]
-    space_top, space_bottom = y0 + h - 1.25, y0 + .2          # room left under the note
-    base = (space_top + space_bottom) / 2 - (2 * rmax - .62) / 2  # circles + names + pills sit in the middle
-    left = x0 + (w - sum(slots)) / 2
-    for i, (n, fp, fpp) in enumerate(rows):
-        cx, c = left + sum(slots[:i]) + slots[i] / 2, color(n)
-        r = size(rmax, fp)
-        p.orb(cx, base + r, r, c)
-        if r >= .3:
-            p.text(cx, base + r, cnt(fp), 13, "#0B1020", "bold", ha="center", va="center", z=8)
-        else:
-            p.text(cx, base + 2 * r + .14, cnt(fp), 12, TEXT, "semibold", ha="center", va="center")
-        p.text(cx, base - .22, n, 12, TEXT, "semibold", ha="center", va="center")
-        p.chg_pill(cx, base - .5, pct(fp, fpp), 9, ha="center")
-
-
 def section_phantom(p, d, x0, y0, w, h):
     """4. Phantom revenue, split into prediction markets (PM) and everything else."""
     p.card(x0, y0, w, h)
     (tp, pmp), (tt, pmt) = d["phantom_rev"]["prev"], d["phantom_rev"]["today"]
     if tt <= 0:
-        p.section_title(x0, y0 + h, 4, "Phantom revenue", "", 58)
+        p.section_title(x0, y0 + h, 3, "Phantom revenue", "", 58)
         return p.no_data(x0, y0, w, h)
     op, ot = tp - pmp, tt - pmt
     share, share_p = pmt / tt * 100, (pmp / tp * 100 if tp else None)
     note = f"Revenue {chg(pct(tt, tp))} to {usd(tt, 2)}. PM {chg(pct(pmt, pmp))}, everything else {chg(pct(ot, op))}."
     if share_p is not None:
         note += f" PM share {share_p:.1f}% → {share:.1f}%."
-    p.section_title(x0, y0 + h, 4, "Phantom revenue", note, 58)
+    p.section_title(x0, y0 + h, 3, "Phantom revenue", note, 58)
 
     cx, cy = x0 + 1.4, y0 + h - 2.5
     p.ax.add_patch(Circle((cx, cy), 1.12, fc=PM_C, ec="none", alpha=.05, zorder=1))
@@ -565,11 +529,10 @@ def render(d, path=OUT):
     p.background()
     header(p, d)
     section_flow(p, d, .3, 5.55, W - .6, 4.45)
-    section_share(p, d, .3, .45, 7.75, 4.9)
-    section_payers(p, d, 8.25, .45, 4.3, 4.9)
+    section_share(p, d, .3, .45, 12.25, 4.9)                   # takes the space fee payers used to have
     section_phantom(p, d, 12.75, .45, W - .3 - 12.75, 4.9)
     p.text(.35, .2, f"Volume and transaction bars use log scale; the thin white tick marks {d['prev']}. "
-                    f"Changes are vs {d['prev']}. Fee payers can overlap across frontends. PM = prediction markets.",
+                    f"Changes are vs {d['prev']}. PM = prediction markets.",
            9, FAINT, va="center")
     return p.save(path)
 
@@ -645,7 +608,6 @@ def main():
         return
     d = build_data(vol_rows,
                    fetch_rows(SHARE_QUERY_ID, "market share"),
-                   fetch_rows(FEE_QUERY_ID, "fee payers"),
                    fetch_rows(PHANTOM_REVENUE_QUERY_ID, "Phantom revenue"))
 
     print("\nTop 10 frontends:")
